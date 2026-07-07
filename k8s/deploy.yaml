@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: okp
+  namespace: knowledge
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: okp
+  template:
+    metadata:
+      labels:
+        app: okp
+    spec:
+      imagePullSecrets:
+      - name: gitea-registry
+      containers:
+      - name: api
+        image: git.talesofai.com/markbang/okp:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8720
+        envFrom:
+        - secretRef:
+            name: okp-pg
+        env:
+        - name: OKP_API_PORT
+          value: "8720"
+        - name: OKP_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: okp-pg
+              key: OKP_API_TOKEN
+        - name: OKP_LOG_LEVEL
+          value: "info"
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8720
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8720
+          initialDelaySeconds: 15
+          periodSeconds: 30
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 50m
+          limits:
+            memory: 256Mi
+            cpu: 500m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: okp
+  namespace: knowledge
+spec:
+  selector:
+    app: okp
+  ports:
+  - port: 8720
+    targetPort: 8720
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: okp-route
+  namespace: knowledge
+spec:
+  hostnames:
+    - okp.neta.art
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: traefik-gateway
+      namespace: kube-system
+  rules:
+    - backendRefs:
+        - group: ""
+          kind: Service
+          name: okp
+          port: 8720
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
