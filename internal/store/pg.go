@@ -76,11 +76,19 @@ func Init() {
 		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_links_from ON links (from_id)").Error
 		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_links_to ON links (to_id)").Error
 	} else {
-		// PostgreSQL: 创建扩展和 trigram 索引
+		// PostgreSQL: 确保 UTF-8 编码
+		_ = DB.Exec("SET client_encoding = 'UTF8'").Error
+
+		// PostgreSQL: 创建扩展和索引
 		_ = DB.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm").Error
 		_ = DB.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error
+		// pg_trgm trigram 索引：对中文按字符三元组工作，支持相似度搜索和 ILIKE
 		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_title_trgm ON concepts USING gin (title gin_trgm_ops)`).Error
 		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_tags_gin ON concepts USING gin (tags)`).Error
+		// 复合索引：domain + type + status（过滤查询优化）
+		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_domain_type_status ON concepts (domain, type, status)`).Error
+		// 中文全文搜索：正文 ILIKE 加速（pg_trgm 已支持非字母语言）
+		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_description_trgm ON concepts USING gin (description gin_trgm_ops)`).Error
 	}
 
 	slog.Info("数据库迁移完成")
