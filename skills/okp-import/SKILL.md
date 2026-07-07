@@ -5,17 +5,14 @@ description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领�
 metadata:
   requires:
     bins: ["okp"]
-  cliHelp: "/mods/okp/okp --help"
+  cliHelp: "okp --help"
 ---
 
 # okp-import — 知识导入 Skill
 
-## 环境准备
-
-okp CLI 位于 `/mods/okp/okp`，默认连接 `https://okp.neta.art`。确保 CLI 可用：
-
+**CRITICAL — 开始前 MUST 确认 okp CLI 已安装并可连接 API：**
 ```bash
-/mods/okp/okp domains    # 确认 API 可达
+okp domains    # 确认 API 可达
 ```
 
 ## 何时使用
@@ -31,7 +28,7 @@ okp CLI 位于 `/mods/okp/okp`，默认连接 `https://okp.neta.art`。确保 CL
 理解要导入的数据属于哪个 `domain` 和 `type`。
 
 ```bash
-/mods/okp/okp domains    # 查看已有领域，确定是新 domain 还是已有 domain
+okp domains    # 查看已有领域，确定是新 domain 还是已有 domain
 ```
 
 查看该 type 的模板和 golden examples：
@@ -44,7 +41,7 @@ okp CLI 位于 `/mods/okp/okp`，默认连接 `https://okp.neta.art`。确保 CL
 在写入前，用目标的 title 搜索已有概念，避免重复：
 
 ```bash
-/mods/okp/okp search "<title>" --domain <domain> --type <type>
+okp search "<title>" --domain <domain> --type <type>
 ```
 
 如果查到高度相似的已有概念（`match_reason: text_match`），则：
@@ -67,7 +64,7 @@ okp CLI 位于 `/mods/okp/okp`，默认连接 `https://okp.neta.art`。确保 CL
 ### Step 4: 本地校验
 
 ```bash
-cat concept.json | /mods/okp/okp put <id>   # API 端会自动执行 L1 硬门禁校验
+cat concept.json | okp put <id>   # API 端会自动执行 L1 硬门禁校验
 ```
 
 校验失败时，API 返回 422 + 具体修复建议（`detail` 数组里的 `fix` 字段）。按提示修改后重试。
@@ -82,13 +79,13 @@ cat concept.json | /mods/okp/okp put <id>   # API 端会自动执行 L1 硬门�
 
 ```bash
 # 单个写入
-echo '<concept-json>' | /mods/okp/okp put <id>
+echo '<concept-json>' | okp put <id>
 
 # 从文件写入
-/mods/okp/okp put <id> -f concept.json
+okp put <id> -f concept.json
 
 # 批量写入（NDJSON 格式，每行一个 concept JSON）
-/mods/okp/okp batch concepts.ndjson
+okp batch concepts.ndjson
 ```
 
 写入成功返回完整的 concept 对象（含 `content_hash`、`updated_at`）。
@@ -100,7 +97,7 @@ echo '<concept-json>' | /mods/okp/okp put <id>
 
 ```bash
 # 查看当前链接
-/mods/okp/okp links <id>
+okp links <id>
 
 # 链接通过 API 操作：
 # PUT /api/v1/concepts/<id>/links
@@ -118,8 +115,8 @@ echo '<concept-json>' | /mods/okp/okp put <id>
 - 失败: N 个（附具体错误）
 - 待人工确认疑似重复: N 个
 
-可使用 /mods/okp/okp search --domain <domain> --type <type> 验证导入结果。
-可使用 /mods/okp/okp export <domain> 导出 OKF bundle 供人类 review。
+可使用 okp search --domain <domain> --type <type> 验证导入结果。
+可使用 okp export <domain> 导出 OKF bundle 供人类 review。
 ```
 
 ## id 命名规范
@@ -157,10 +154,10 @@ echo '<concept-json>' | /mods/okp/okp put <id>
 
 ## 批量导入
 
-对于大规模存量迁移（如 fandom 角色卡），使用 NDJSON 格式 + `/mods/okp/okp batch`：
+对于大规模存量迁移（如 fandom 角色卡），使用 NDJSON 格式 + `okp batch`：
 
 ```bash
-/mods/okp/okp batch fandom-characters.ndjson
+okp batch fandom-characters.ndjson
 ```
 
 NDJSON 格式（每行一个完整 concept JSON）：
@@ -192,4 +189,3 @@ NDJSON 格式（每行一个完整 concept JSON）：
 - `references/templates/_template.md` — 通用模板和说明
 - `references/templates/Character.md` — 角色类模板（示例）
 - `references/templates/ArtStyle.md` — 画风类模板（示例）
-
