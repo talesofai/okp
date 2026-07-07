@@ -253,26 +253,28 @@ func Auth(next http.Handler) http.Handler {
 
 		var userID, authType string
 
-		// 1. Execution Grant
-		if config.C.ExecutionGrantKey != "" {
+		// 1. 静态 API Token（最快，先检查）
+		if config.C.APIToken != "" && token == config.C.APIToken {
+			userID = "token:api"
+			authType = "token"
+		}
+
+		// 2. Execution Grant
+		if userID == "" && config.C.ExecutionGrantKey != "" {
 			if uid, ok := validateExecutionGrant(token, config.C.ExecutionGrantKey); ok {
 				userID = uid
 				authType = "execution"
 			}
 		}
 
-		// 2. Logto JWT
-		if userID == "" && config.C.LogtoEndpoint != "" {
-			if uid, ok := validateLogtoToken(r.Context(), token, config.C.LogtoEndpoint, config.C.LogtoResource); ok {
+		// 3. Logto JWT（仅当 token 像 JWT 时才尝试，避免无效网络请求）
+		if userID == "" && config.C.LogtoEndpoint != "" && strings.Count(token, ".") == 2 {
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			defer cancel()
+			if uid, ok := validateLogtoToken(ctx, token, config.C.LogtoEndpoint, config.C.LogtoResource); ok {
 				userID = uid
 				authType = "logto"
 			}
-		}
-
-		// 3. 静态 API Token（向下兼容）
-		if userID == "" && config.C.APIToken != "" && token == config.C.APIToken {
-			userID = "token:api"
-			authType = "token"
 		}
 
 		if userID == "" {
