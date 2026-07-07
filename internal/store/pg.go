@@ -8,7 +8,7 @@ import (
 	"github.com/talesofai/okp/internal/config"
 	"github.com/talesofai/okp/internal/model"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
 )

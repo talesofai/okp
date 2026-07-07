@@ -4,8 +4,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=1 go build -o /bin/okp-api ./cmd/api && \
-    CGO_ENABLED=1 go build -o /bin/okp ./cmd/cli
+RUN CGO_ENABLED=0 go build -o /bin/okp-api ./cmd/api && \
+    CGO_ENABLED=0 go build -o /bin/okp ./cmd/cli
 
 FROM debian:bookworm-slim
 
