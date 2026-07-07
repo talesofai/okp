@@ -298,10 +298,9 @@ func updateUserRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 仅 static API token 或 execution grant 用户可以管理角色
-	at := auth.AuthTypeFromContext(r)
-	if at != "token" && at != "execution" {
-		writeError(w, http.StatusForbidden, "admin endpoints require API token or execution grant")
+	// 仅 OKP_API_TOKEN 可以管理角色
+	if auth.AuthTypeFromContext(r) != "token" {
+		writeError(w, http.StatusForbidden, "admin endpoints require OKP_API_TOKEN")
 		return
 	}
 
