@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>okp — open knowledge pool</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+:root{--bg:#0d0f12;--surface:#15181d;--border:#252830;--text:#9ca3af;--dim:#5c6068;--bright:#e0e4ea;--accent:#6b8ab0;--amber:#b89543;--green:#5a815a;--blue:#5a7b9b}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;min-height:100vh}
+.topbar{display:flex;align-items:baseline;gap:12px;padding:16px 24px;border-bottom:1px solid var(--border);background:var(--surface)}
+.topbar .logo{font-size:18px;font-weight:700;color:var(--bright);text-decoration:none}
+.topbar .sub{font-size:13px;color:var(--dim)}
+main{max-width:960px;margin:0 auto;padding:32px 24px}
+.hero{text-align:center;margin-bottom:40px}
+.hero h1{font-size:28px;color:var(--bright);margin-bottom:8px}
+.hero p{color:var(--dim);margin-bottom:24px}
+.search-box{display:flex;justify-content:center;gap:8px}
+.search-box input{width:360px;padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:15px;outline:none}
+.search-box input:focus{border-color:var(--accent)}
+.search-box button{padding:10px 20px;background:var(--blue);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:14px}
+.search-box button:hover{opacity:.85}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.card{display:block;padding:20px 24px;background:var(--surface);border:1px solid var(--border);border-radius:8px;text-decoration:none;cursor:pointer;transition:border-color .15s}
+.card:hover{border-color:var(--accent)}
+.card .name{font-weight:600;color:var(--bright);margin-bottom:4px}
+.card .count{font-size:13px;color:var(--dim)}
+.list{display:flex;flex-direction:column;gap:8px}
+.list .card .domain{font-size:12px;color:var(--dim);text-transform:uppercase;margin-bottom:2px}
+.list .card .title{font-weight:600;color:var(--bright)}
+.list .card .desc{font-size:13px;color:var(--dim);margin-top:4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.list .card .tags{margin-top:8px;display:flex;gap:4px;flex-wrap:wrap}
+.tag{font-size:11px;color:var(--amber);border:1px solid var(--border);border-radius:4px;padding:1px 6px}
+.match{font-size:11px;color:var(--blue);border:1px solid var(--blue);border-radius:4px;padding:1px 6px}
+.back{display:inline-block;color:var(--dim);text-decoration:none;font-size:14px;margin-bottom:16px}
+.back:hover{color:var(--bright)}
+h1.page{font-size:22px;color:var(--bright);margin-bottom:24px}
+.results-count{font-size:14px;color:var(--dim);margin-bottom:16px}
+.pagination{display:flex;justify-content:center;gap:8px;margin-top:24px}
+.pagination button{padding:8px 20px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer;font-size:14px}
+.pagination button:hover:not(:disabled){border-color:var(--accent)}
+.pagination button:disabled{opacity:.4;cursor:default}
+.loading{text-align:center;padding:48px;color:var(--dim)}
+.empty{text-align:center;padding:48px;color:var(--dim)}
+.detail{max-width:760px}
+.detail .bread{font-size:13px;color:var(--dim);margin-bottom:8px}
+.detail h1{font-size:24px;color:var(--bright);margin-bottom:8px}
+.detail .ddesc{color:var(--dim);margin-bottom:16px}
+.detail .dtags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:24px}
+.detail .resource{padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:24px}
+.detail .resource a{color:var(--blue);text-decoration:none}
+.detail .body{line-height:1.8}
+.detail .body h1,.detail .body h2,.detail .body h3{color:var(--bright);margin:1.5em 0 .5em}
+.detail .body a{color:var(--blue)}
+.detail .body code{background:var(--surface);color:var(--amber);padding:1px 6px;border-radius:4px;font-size:.9em}
+.detail .body pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto;margin:.8em 0}
+.detail .body pre code{background:none;color:var(--text);padding:0}
+.detail .body blockquote{border-left:3px solid var(--amber);padding:.3em 0 .3em 1em;color:var(--dim);margin:.8em 0}
+.detail .body img{max-width:100%;border-radius:6px}
+.detail .body table{border-collapse:collapse;width:100%;margin:.8em 0}
+.detail .body th,.detail .body td{border:1px solid var(--border);padding:8px 12px;text-align:left}
+.detail .body th{background:var(--surface);color:var(--bright)}
+.meta-box{margin-top:32px;padding:16px 20px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.meta-box summary{cursor:pointer;font-weight:600;color:var(--bright);font-size:14px}
+.meta-box pre{margin-top:12px;font-size:12px;color:var(--dim);overflow:auto}
+.status-accepted{font-size:11px;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 6px}
+.status-draft{font-size:11px;color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:1px 6px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="#" class="logo" onclick="route('/')">okp</a>
+  <span class="sub">open knowledge pool</span>
+</div>
+<main id="app"><div class="loading">loading…</div></main>
+
+<script>
+var BASE = 'https://okp.neta.art';
+var TOKEN = 'tok';
+var CACHE = {};
+var PAGE_SIZE = 50;
+
+function api(path) {
+  if (CACHE[path]) return Promise.resolve(CACHE[path]);
+  return fetch(BASE + path, {headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'}})
+    .then(function(r){ if(!r.ok) return r.json().then(function(e){throw new Error(e.error||'HTTP '+r.status)}); return r.json(); })
+    .then(function(d){ CACHE[path]=d; return d; });
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Router ──
+function route(path, push) {
+  if (push !== false) location.hash = path;
+  var p = path.split('?')[0];
+  var q = {};
+  (path.split('?')[1]||'').split('&').forEach(function(s){
+    var kv = s.split('='); if(kv[0]) q[kv[0]]=decodeURIComponent(kv[1]||'');
+  });
+
+  if (p === '/' || p === '') home();
+  else if (p === '/search') searchView(q.q||'');
+  else if (p.startsWith('/domain/')) domainView(p.split('/domain/')[1]);
+  else if (p.startsWith('/concept/')) conceptView(p.replace('/concept/',''));
+}
+
+window.onhashchange = function(){ route(location.hash.slice(1), false); };
+
+// ── Views ──
+function home() {
+  api('/api/v1/domains').then(function(domains){
+    var h = '<div class="hero">';
+    h += '<h1>知识池</h1><p>浏览所有知识领域，搜索概念</p>';
+    h += '<div class="search-box"><form onsubmit="event.preventDefault();route(\'/search?q=\'+encodeURIComponent(this.q.value))">';
+    h += '<input name="q" placeholder="搜索概念…" autofocus>';
+    h += '<button type="submit">搜索</button></form></div></div>';
+
+    if (!domains || !domains.length) {
+      h += '<div class="empty">暂无领域</div>';
+    } else {
+      h += '<div class="grid">';
+      domains.forEach(function(d){
+        h += '<a href="#/domain/'+d.domain+'" class="card"><div class="name">'+esc(d.domain)+'</div><div class="count">'+d.concept_count+' concepts</div></a>';
+      });
+      h += '</div>';
+    }
+    document.getElementById('app').innerHTML = h;
+  }).catch(function(e){
+    document.getElementById('app').innerHTML = '<div class="empty">加载失败: '+esc(e.message)+'</div>';
+  });
+}
+
+function searchView(q) {
+  if (!q) { route('/'); return; }
+  document.getElementById('app').innerHTML = '<div class="loading">搜索中…</div>';
+
+  var h = '';
+  h += '<div class="search-box" style="margin-bottom:32px">';
+  h += '<form onsubmit="event.preventDefault();route(\'/search?q=\'+encodeURIComponent(this.q.value))" style="display:flex;gap:8px;width:100%">';
+  h += '<input name="q" value="'+esc(q)+'" placeholder="搜索…" style="flex:1">';
+  h += '<button type="submit">搜索</button></form></div>';
+
+  api('/api/v1/concepts?q='+encodeURIComponent(q)+'&limit=50&status=accepted').then(function(items){
+    if (!items || !items.length) {
+      h += '<div class="empty">无结果</div>';
+    } else {
+      h += '<div class="results-count">'+items.length+' 条结果</div><div class="list">';
+      items.forEach(function(c){ h += conceptCard(c); });
+      h += '</div>';
+    }
+    document.getElementById('app').innerHTML = h;
+  }).catch(function(e){
+    document.getElementById('app').innerHTML = h + '<div class="empty">搜索失败: '+esc(e.message)+'</div>';
+  });
+}
+
+function domainView(domain, offset) {
+  offset = offset || 0;
+  document.getElementById('app').innerHTML = '<div class="loading">加载中…</div>';
+
+  api('/api/v1/concepts?domain='+domain+'&limit='+PAGE_SIZE+'&offset='+offset+'&status=accepted').then(function(items){
+    var h = '<a href="#" class="back" onclick="route(\'/\')">&larr; 返回</a>';
+    h += '<h1 class="page">'+esc(domain)+'</h1>';
+
+    if (!items || !items.length) {
+      h += '<div class="empty">暂无概念</div>';
+    } else {
+      h += '<div class="list">';
+      items.forEach(function(c){ h += conceptCard(c); });
+      h += '</div>';
+      h += '<div class="pagination">';
+      if (offset > 0) h += '<button onclick="domainView(\''+domain+'\','+(offset-PAGE_SIZE)+')">上一页</button>';
+      if (items.length === PAGE_SIZE) h += '<button onclick="domainView(\''+domain+'\','+(offset+PAGE_SIZE)+')">下一页</button>';
+      h += '</div>';
+    }
+    document.getElementById('app').innerHTML = h;
+  }).catch(function(e){
+    document.getElementById('app').innerHTML = '<div class="empty">加载失败</div>';
+  });
+}
+
+function conceptView(id) {
+  document.getElementById('app').innerHTML = '<div class="loading">加载中…</div>';
+
+  api('/api/v1/concepts/'+encodeURIComponent(id)).then(function(c){
+    var h = '<div class="detail">';
+    h += '<a href="#/domain/'+c.domain+'" class="back">&larr; '+esc(c.domain)+'</a>';
+    h += '<div class="bread">'+esc(c.domain)+' / '+esc(c.type)+'</div>';
+    h += '<h1>'+esc(c.title)+'</h1>';
+    if (c.description) h += '<div class="ddesc">'+esc(c.description)+'</div>';
+    h += '<div class="dtags">';
+    if (c.tags) c.tags.forEach(function(t){ h += '<span class="tag">'+esc(t)+'</span>'; });
+    h += '<span class="status-'+(c.status||'draft')+'">'+esc(c.status||'draft')+'</span>';
+    h += '</div>';
+
+    if (c.resource) {
+      h += '<div class="resource"><a href="'+esc(c.resource)+'" target="_blank">&#x1f4ce; 资源链接 &rarr;</a></div>';
+    }
+
+    if (c.body) {
+      h += '<div class="body">';
+      try { h += marked.parse(c.body); } catch(e) { h += '<pre>'+esc(c.body)+'</pre>'; }
+      h += '</div>';
+    }
+
+    if (c.provenance && Object.keys(c.provenance).length) {
+      h += '<div class="meta-box"><details><summary>来源信息</summary><pre>'+esc(JSON.stringify(c.provenance,null,2))+'</pre></details></div>';
+    }
+
+    h += '</div>';
+    document.getElementById('app').innerHTML = h;
+  }).catch(function(e){
+    document.getElementById('app').innerHTML = '<div class="empty">加载失败: '+esc(e.message)+'</div>';
+  });
+}
+
+function conceptCard(c) {
+  var h = '<a href="#/concept/'+c.id+'" class="card">';
+  h += '<div class="domain">'+esc(c.domain)+' / '+esc(c.type)+'</div>';
+  h += '<div class="title">'+esc(c.title)+'</div>';
+  if (c.description) h += '<div class="desc">'+esc(c.description.slice(0,150))+'</div>';
+  h += '<div class="tags">';
+  if (c.tags) c.tags.slice(0,5).forEach(function(t){ h += '<span class="tag">'+esc(t)+'</span>'; });
+  if (c.match_reason) h += '<span class="match">'+esc(c.match_reason)+'</span>';
+  h += '</div>';
+  h += '</a>';
+  return h;
+}
+
+// ── Boot ──
+route(location.hash.slice(1) || '/', false);
+</script>
+</body>
+</html>
