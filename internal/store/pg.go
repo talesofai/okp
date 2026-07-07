@@ -64,6 +64,7 @@ func Init() {
 		&model.Concept{},
 		&model.Link{},
 		&model.Revision{},
+		&model.User{},
 	); err != nil {
 		slog.Error("数据库迁移失败", "error", err)
 		panic(err)

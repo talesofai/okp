@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	apiBase string
+	apiBase  string
 	apiToken string
 )
 
@@ -19,17 +19,17 @@ func main() {
 管理知识池中的 concept：写入、查询、导出、校验。
 
 环境变量：
-  OKP_API_BASE    API 服务地址（默认 http://localhost:8720）
-  OKP_API_TOKEN   API 认证 token`,
+  OKP_API_BASE    API 服务地址（默认 https://okp.neta.art）
+  OKP_API_TOKEN   API 认证 token（可选；在 cohub sandbox 中自动使用 COHUB_EXECUTION_TOKEN）`,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if apiBase == "" {
 				apiBase = os.Getenv("OKP_API_BASE")
 				if apiBase == "" {
-					apiBase = "http://localhost:8720"
+					apiBase = "https://okp.neta.art"
 				}
 			}
 			if apiToken == "" {
-				apiToken = os.Getenv("OKP_API_TOKEN")
+				apiToken = resolveToken()
 			}
 		},
 	}
@@ -50,4 +50,17 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// resolveToken 按优先级获取 token：
+// 1. OKP_API_TOKEN 环境变量
+// 2. COHUB_EXECUTION_TOKEN（在 cohub sandbox 中自动注入）
+func resolveToken() string {
+	if t := os.Getenv("OKP_API_TOKEN"); t != "" {
+		return t
+	}
+	if t := os.Getenv("COHUB_EXECUTION_TOKEN"); t != "" {
+		return t
+	}
+	return ""
 }

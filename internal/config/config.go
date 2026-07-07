@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"strings"
 )
@@ -10,13 +9,18 @@ import (
 var C Config
 
 type Config struct {
-	DatabaseURL  string
-	DatabaseType string // "postgres" | "sqlite"
-	SQLitePath   string // SQLite 文件路径
-	APIPort      string
-	APIToken     string
-	LogLevel     string
-	DomainTokens map[string]string
+	DatabaseURL       string
+	DatabaseType      string // "postgres" | "sqlite"
+	SQLitePath        string // SQLite 文件路径
+	APIPort           string
+	APIToken          string // 静态 token（向下兼容，可选）
+	LogLevel          string
+	DomainTokens      map[string]string
+
+	// Cohub auth
+	LogtoEndpoint     string // Logto OIDC issuer, e.g. https://auth.neta.art
+	LogtoResource     string // Expected audience, default https://api.talesofai
+	ExecutionGrantKey string // HMAC key shared with cohub API for validating execution grants
 }
 
 func Load() {
@@ -25,9 +29,13 @@ func Load() {
 		DatabaseType: envDefault("OKP_DATABASE_TYPE", "postgres"),
 		SQLitePath:   envDefault("OKP_SQLITE_PATH", "./okp.db"),
 		APIPort:      envDefault("OKP_API_PORT", "8720"),
-		APIToken:     requireEnv("OKP_API_TOKEN"),
+		APIToken:     os.Getenv("OKP_API_TOKEN"),
 		LogLevel:     envDefault("OKP_LOG_LEVEL", "info"),
 		DomainTokens: parseDomainTokens(os.Getenv("OKP_DOMAIN_TOKENS")),
+
+		LogtoEndpoint:     envDefault("OKP_LOGTO_ENDPOINT", "https://auth.neta.art"),
+		LogtoResource:     envDefault("OKP_LOGTO_RESOURCE", "https://api.talesofai"),
+		ExecutionGrantKey: os.Getenv("OKP_EXECUTION_GRANT_KEY"),
 	}
 
 	// SQLite 模式不需要 DATABASE_URL
@@ -37,14 +45,8 @@ func Load() {
 	if C.DatabaseType != "sqlite" && C.DatabaseURL == "" {
 		panic("非 SQLite 模式必须设置 OKP_DATABASE_URL")
 	}
-}
 
-func requireEnv(key string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		panic(fmt.Sprintf("环境变量 %s 未设置", key))
-	}
-	return v
+	// API Token 不再强制要求（支持 Logto JWT / Execution Grant 认证）
 }
 
 func envDefault(key, def string) string {
