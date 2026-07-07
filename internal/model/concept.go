@@ -84,7 +84,73 @@ func (s *StringSlice) Scan(value any) error {
 		*s = StringSlice{}
 		return nil
 	}
+
+	// 先尝试 JSON 格式 [...]
+	if data[0] == '[' {
+		return json.Unmarshal(data, s)
+	}
+
+	// PG text[] 格式: {"elem1","elem2"} -> 手动解析
+	if data[0] == '{' {
+		*s = parsePGArray(string(data))
+		return nil
+	}
+
 	return json.Unmarshal(data, s)
+}
+
+// parsePGArray 解析 PostgreSQL text[] 字面量 (如 {"a","b,c"})
+func parsePGArray(raw string) []string {
+	// 去掉首尾大括号
+	if len(raw) < 2 || raw[0] != '{' || raw[len(raw)-1] != '}' {
+		return nil
+	}
+	inner := raw[1 : len(raw)-1]
+	if inner == "" {
+		return []string{}
+	}
+
+	var result []string
+	var current []byte
+	i := 0
+	for i < len(inner) {
+		ch := inner[i]
+		if ch == '"' {
+			// 引号包裹的元素
+			i++ // skip opening quote
+			for i < len(inner) {
+				if inner[i] == '\\' && i+1 < len(inner) {
+					current = append(current, inner[i+1])
+					i += 2
+				} else if inner[i] == '"' {
+					i++ // skip closing quote
+					break
+				} else {
+					current = append(current, inner[i])
+					i++
+				}
+			}
+			result = append(result, string(current))
+			current = nil
+			// skip comma
+			if i < len(inner) && inner[i] == ',' {
+				i++
+			}
+		} else if ch == ',' {
+			// 无引号元素结束
+			result = append(result, string(current))
+			current = nil
+			i++
+		} else {
+			current = append(current, ch)
+			i++
+		}
+	}
+	// 最后一个无引号元素
+	if len(current) > 0 {
+		result = append(result, string(current))
+	}
+	return result
 }
 
 // ── Concept — 主干表 ───────────────────────────────────────
