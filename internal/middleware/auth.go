@@ -283,8 +283,8 @@ func Auth(next http.Handler) http.Handler {
 		// 记录用户
 		upsertUser(userID, authType)
 
-		// 写操作需要 writer 角色
-		if isWriteMethod(r.Method) && !canWrite(userID) {
+		// 写操作需要 writer 角色（静态 token / admin 路由 / execution grant 首次写除外）
+		if isWriteMethod(r.Method) && authType != "token" && !isAdminRoute(r.URL.Path) && !canWrite(userID) {
 			http.Error(w, `{"error":"write access denied: role 'writer' required"}`, http.StatusForbidden)
 			return
 		}
@@ -301,4 +301,9 @@ func isWriteMethod(method string) bool {
 		return true
 	}
 	return false
+}
+
+// isAdminRoute 允许 admin 路由绕过 writer 角色检查（用于 bootstrap）
+func isAdminRoute(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/admin/")
 }

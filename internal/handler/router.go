@@ -13,6 +13,7 @@ import (
 	"github.com/talesofai/okp/internal/model"
 	auth "github.com/talesofai/okp/internal/middleware"
 	"github.com/talesofai/okp/internal/service"
+	"github.com/talesofai/okp/internal/store"
 )
 
 
@@ -49,6 +50,9 @@ func NewRouter() http.Handler {
 	r.Get("/api/v1/domains", listDomains)
 	r.Get("/api/v1/domains/{domain}/export", exportDomain)
 	r.Get("/api/v1/health", healthCheck)
+
+	// Admin
+	r.Put("/api/v1/admin/users/{uuid}", updateUserRole)
 
 	return r
 }
@@ -280,4 +284,44 @@ func itoa(n int64) string {
 		s = "-" + s
 	}
 	return s
+}
+
+// ── Admin ──────────────────────────────────────────────────
+
+// PUT /api/v1/admin/users/{uuid}
+// Body: {"role": "writer"} or {"role": "reader"}
+// 仅静态 API token 用户可调用
+func updateUserRole(w http.ResponseWriter, r *http.Request) {
+	uuid := chi.URLParam(r, "uuid")
+	if uuid == "" {
+		writeError(w, http.StatusBadRequest, "uuid required")
+		return
+	}
+
+	// 仅 static API token 或 execution grant 用户可以管理角色
+	at := auth.AuthTypeFromContext(r)
+	if at != "token" && at != "execution" {
+		writeError(w, http.StatusForbidden, "admin endpoints require API token or execution grant")
+		return
+	}
+
+	var body struct {
+		Role string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if body.Role != "reader" && body.Role != "writer" {
+		writeError(w, http.StatusBadRequest, "role must be 'reader' or 'writer'")
+		return
+	}
+
+	if err := store.DB.Model(&model.User{}).Where("uuid = ?", uuid).Update("role", body.Role).Error; err != nil {
+		slog.Error("更新用户角色失败", "uuid", uuid, "error", err)
+		writeError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"uuid": uuid, "role": body.Role})
 }
