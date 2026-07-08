@@ -1,7 +1,7 @@
 ---
 name: okp-import
-version: 1.0.0
-description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领域 owner 的 agent：读原始数据 → 查重 → 按模板蒸馏 → 本地校验 → 写入。领域 owner 不碰数据库——只通过本 skill 操作。"
+version: 1.1.0
+description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领域 owner 的 agent：读 domain README → 查重 → 蒸馏 → 校验 → 写入。"
 metadata:
   requires:
     bins: ["okp"]
@@ -13,182 +13,136 @@ metadata:
 **CRITICAL — 开始前 MUST 确认 okp CLI 已安装并可连接 API：**
 
 ```bash
-# 安装
 npm install -g @markbangwu/okp
-
 okp domains    # 确认 API 可达
 ```
 
-## 何时使用
-
-- 领域 owner 要求将新知识导入统一知识池。
-- fandom/wiki/文档/画风描述等原始数据需要清洗后入库。
-- 存量数据需要迁移或批量导入。
-
 ## 工作流（严格按顺序）
 
-### Step 1: 确认领域和类型
+### Step 1: 读 domain README
 
-理解要导入的数据属于哪个 `domain` 和 `type`。
+每个 domain 有自己的 README，定义了 frontmatter 字段规范（required 字段、enum 约束等）。**必须先读。**
 
 ```bash
-okp domains    # 查看已有领域，确定是新 domain 还是已有 domain
+okp domain <domain>          # 打印 README（含 schema 定义）
+okp domains                  # 查看所有 domain，确认目标 domain 存在
 ```
 
-查看该 type 的模板和 golden examples：
+如果是新 domain，先用 `okp domain <domain> --set readme.md` 写入 README。
 
-模板位置：`skills/okp-import/references/templates/<type>.md`（本 skill 目录下的 references/）
-如果模板不存在，参考 `references/templates/_template.md` 创建。
+README 格式示例（包含 schema 的 YAML frontmatter）：
+
+```markdown
+---
+fields:
+  sender:
+    type: string
+    required: true
+    description: 飞书发送者用户名
+  group:
+    type: string
+    required: true
+    description: 来源飞书群 id
+  platform:
+    type: enum
+    enum: [bilibili, douyin, xiaohongshu, 抖音, youtube]
+---
+
+# feishu-social
+
+飞书社媒分享数据，覆盖 6 个飞书群的内容链接。
+
+## How to contribute
+每条 concept 的 frontmatter 必须包含 sender 和 group。
+
+## How to use
+okp search --domain feishu-social
+```
 
 ### Step 2: 查重（search-before-insert）
-
-在写入前，用目标的 title 搜索已有概念，避免重复：
 
 ```bash
 okp search "<title>" --domain <domain> --type <type>
 ```
 
-如果查到高度相似的已有概念（`match_reason: text_match`），则：
-- 如果是同一概念 → 使用已有 id 做更新
-- 如果是不同概念 → 修改 title 以区分
+- 命中 `text_match` → 判断是否同一概念 → 是则用已有 id 更新，否则改 title 区分
 
-### Step 3: 按模板蒸馏
+### Step 3: 蒸馏 concept JSON
 
-参照 `references/templates/<type>.md` 将原始数据转换为 OKP concept JSON。
+关键字段：
 
-关键要求：
-- `id`：路径式，必须唯一。格式 `{domain}/{type}/{slug}`
-- `domain`、`type`：必填
-- `provenance`：必填，至少包含 `source`、`agent`、`raw_ref`
-- `description`：一句话摘要，不超过 500 字符
-- `body`：markdown 正文，结构化优先（表格/列表/标题）
-- `frontmatter`：扩展字段放这里（如 scenario、source_id 等）
-- `tags`：至少 1 个标签
-
-### Step 4: 本地校验
-
-```bash
-cat concept.json | okp put <id>   # API 端会自动执行 L1 硬门禁校验
+```json
+{
+  "id": "feishu-social/Link/太离谱了居然可以在自己画的虚拟世界游玩",
+  "domain": "feishu-social",
+  "type": "Link",
+  "title": "太离谱了！居然可以在自己画的虚拟世界游玩！",
+  "description": "一句话摘要，不超过 500 字符",
+  "tags": ["AI视频", "虚拟世界"],
+  "body": "markdown 正文",
+  "frontmatter": {
+    "sender": "kjx",
+    "group": "feishu-worldbuild",
+    "platform": "bilibili",
+    "date": "2026-07-01"
+  },
+  "provenance": {
+    "source": "feishu-sync",
+    "agent": "okp-import/1.1",
+    "raw_ref": "https://..."
+  }
+}
 ```
 
-校验失败时，API 返回 422 + 具体修复建议（`detail` 数组里的 `fix` 字段）。按提示修改后重试。
+**frontmatter 按 domain README 的 schema 填写。required 字段不能缺省。**
 
-**常见失败：**
-- `provenance.source` 为空 → 填写数据来源
-- `provenance.agent` 为空 → 填写 `"okp-import/1.0"`
-- `description` 过长 → 精简到 500 字符以内
-- `title` 疑似重复 → 检查是否已存在同 type 概念
-
-### Step 5: 写入
+### Step 4: 写入
 
 ```bash
-# 单个写入
-echo '<concept-json>' | okp put <id>
-
-# 从文件写入
+# 单个
 okp put <id> -f concept.json
 
-# 批量写入（NDJSON 格式，每行一个 concept JSON）
+# 批量（NDJSON，每行一个 concept）
 okp batch concepts.ndjson
 ```
 
-写入成功返回完整的 concept 对象（含 `content_hash`、`updated_at`）。
-写入内容与已有 concept 完全相同时（`content_hash` 匹配）→ skip，返回已有记录。
+写入失败时 API 返回 422 + `fix` 字段说明如何修复：
+- `frontmatter.<field> 是必填字段` → 补填该字段
+- `疑似重复` → 用 `okp search` 确认是否已有
+- `provenance.source 为空` → 填数据来源
 
-### Step 6: 追加链接（可选）
-
-如果概念之间有引用关系：
+### Step 5: 验证
 
 ```bash
-# 查看当前链接
-okp links <id>
-
-# 链接通过 API 操作：
-# PUT /api/v1/concepts/<id>/links
-# body: {"links": [{"to_id": "...", "context": "references"}]}
+okp search --domain <domain> --type <type> | head    # 抽样验证
+okp get <id>                                          # 确认单条完整
 ```
 
-### Step 7: 汇报
-
-每次导入结束后，向 owner 汇报：
+### Step 6: 汇报
 
 ```
 本次导入 domain=<domain>, type=<type>:
 - 新建: N 个
 - 跳过（未变更）: N 个
 - 失败: N 个（附具体错误）
-- 待人工确认疑似重复: N 个
-
-可使用 okp search --domain <domain> --type <type> 验证导入结果。
-可使用 okp export <domain> 导出 OKF bundle 供人类 review。
 ```
 
 ## id 命名规范
 
 ```
-{domain}/{type}/{slug}
-
-例：
-  fandom/genshin-impact/characters/klee
-  art-style/chinese-ink/technique/wash-and-line
-  nieta-wiki/playbook/deployment-checklist
+{domain}/{type}/{slug}   # slug 用 kebab-case，避免中文和空格
 ```
 
-- slug 使用 kebab-case
-- 避免中文、空格、特殊字符（使用拼音或英文翻译）
-- 同一 domain+type 下 slug 唯一
+## provenance 必填字段
 
-## provenance 契约
-
-```json
-{
-  "provenance": {
-    "source": "fandom-crawl",
-    "agent": "okp-import/1.0",
-    "raw_ref": "https://genshin-impact.fandom.com/wiki/Klee",
-    "content_hash": "<自动计算>",
-    "imported_at": "<自动填充>"
-  }
-}
-```
-
-- `source`：数据来源标识（`fandom-crawl`/`manual`/`agent-import`/`docs-export`）
-- `agent`：写入方标识，建议 `okp-import/{version}`
-- `raw_ref`：原始数据的 URL 或路径，方便溯源
-
-## 批量导入
-
-对于大规模存量迁移（如 fandom 角色卡），使用 NDJSON 格式 + `okp batch`：
-
-```bash
-okp batch fandom-characters.ndjson
-```
-
-NDJSON 格式（每行一个完整 concept JSON）：
-
-```jsonl
-{"id":"fandom/genshin-impact/characters/klee","domain":"fandom","type":"Character","title":"Klee",...}
-{"id":"fandom/genshin-impact/characters/venti","domain":"fandom","type":"Character","title":"Venti",...}
-```
-
-批次大小建议 ≤ 500 条/次。
-
-## 注意事项
-
-- **幂等安全**：重复导入同一 concept（内容未变）自动 skip，不会产生重复数据。
-- **原始数据不进池**：只导入蒸馏后的 concept，不要把原始 wiki 页面全文当 concept body。
-- **图像走 R2 URI**：concept 的 `resource` 字段存图像 R2 URI，不存 base64。
+| 字段 | 说明 |
+|---|---|
+| `source` | 数据来源，如 `feishu-sync`、`manual`、`fandom-crawl` |
+| `agent` | 写入方，如 `okp-import/1.1` |
+| `raw_ref` | 原始数据 URL 或路径 |
 
 ## 不在本 skill 范围
 
-- 知识搜索和消费 → okp-search
-- 数据库管理、API 部署 → 运维团队
-- 原始数据爬取和存储 → 各 domain 自己的数据管道
-
-## 模板文件
-
-`references/templates/` 下的模板文件定义了各 type 的标准格式和 golden examples。导入前先读取对应模板。
-
-- `references/templates/_template.md` — 通用模板和说明
-- `references/templates/Character.md` — 角色类模板（示例）
-- `references/templates/ArtStyle.md` — 画风类模板（示例）
+- 知识搜索 → okp-search
+- domain README 维护 → `okp domain <domain> --set readme.md`
+- 数据爬取 → 各 domain 自己的数据管道

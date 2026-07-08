@@ -1,6 +1,6 @@
 ---
 name: okp-search
-version: 1.0.0
+version: 1.1.0
 description: "在 Open Knowledge Pool 中搜索和导航知识。面向消费 agent：filters 收窄 → light list → 精读少数 → 沿 links 导航。"
 metadata:
   requires:
@@ -13,9 +13,7 @@ metadata:
 **CRITICAL — 开始前 MUST 确认 okp CLI 已安装并可连接 API：**
 
 ```bash
-# 安装
 npm install -g @markbangwu/okp
-
 okp domains   # 确认 API 可达，查看可用的知识领域
 ```
 
@@ -30,112 +28,92 @@ okp domains   # 确认 API 可达，查看可用的知识领域
 ### Step 1: 确定搜索范围
 
 ```bash
-okp domains    # 列出所有领域，确定目标 domain
+okp domains    # 列出所有领域及数量，确定目标 domain
+```
+
+如果不确定 domain 的数据内容和字段规范，先读 README：
+
+```bash
+okp domain <domain>   # 打印该 domain 的 README（含 frontmatter schema）
 ```
 
 ### Step 2: 结构过滤收窄
 
-用领域、类型、标签、场景等过滤条件缩小范围：
-
 ```bash
-# 查 fandom 领域所有角色
-okp search --domain fandom --type Character
-
-# 查画风领域的水墨类
-okp search --domain art-style --type ArtStyle --tag chinese-ink
-
-# 查特定场景
-okp search --domain art-style --scenario character-illustration
+okp search --domain feishu-social --type Link
+okp search --domain stardew-valley --tag 农业
+okp search --domain artist-styles --type Artist
 ```
 
-### Step 3: 文本搜索（当知道具体名称时）
+### Step 3: 文本搜索
 
 ```bash
-# 精确实体名
-okp search "可莉" --domain fandom --type Character
+# 单词或短语
+okp search "可莉" --domain fandom
+okp search "水墨 留白" --domain artist-styles   # 多词自动拆分，每词 ILIKE AND
 
-# 模糊概念
-okp search "水墨" --domain art-style
+# 注意：包含 / 的字符串按文本搜索，不当作路径
+okp search "emilkowalski/skills"
 ```
 
 **`match_reason` 字段含义**：
-- `id_exact` — 精确 ID 匹配（最高置信度）
-- `text_match` — 文本/标题相似（需确认相关性）
+- `id_exact` — 精确 ID 匹配
+- `text_match` — 标题/描述文本命中
 - `tag_match` — 标签匹配
 - `filter_match` — 仅结构过滤命中
 
-**当 `match_reason` 为 `text_match` 时，agent 应检查结果的相关性再决定是否使用。**
+### Step 4: 按 frontmatter 字段筛选
 
-### Step 4: Light list → 精读
-
-搜索结果返回的是轻量列表（id + title + description + match_reason），**不要直接使用**。
-
-选择最相关的 1-3 个 concept，用 `okp get` 获取完整内容：
+搜索结果现在包含 `frontmatter` 字段，可在结果中按字段筛选：
 
 ```bash
-okp get fandom/genshin-impact/characters/klee
+# 获取 feishu-social 结果后，按 group 过滤
+okp search --domain feishu-social | jq '[.[] | select(.frontmatter.group == "feishu-100x")]'
+
+# 按 sender 过滤
+okp search --domain feishu-social | jq '[.[] | select(.frontmatter.sender == "kjx")]'
 ```
 
-**禁止行为**：批量拉取 body。只精读筛选后的少数几个。
+### Step 5: Light list → 精读
 
-### Step 5: 沿关系导航
-
-查看 concept 的引用和被引用关系，发现关联知识：
+搜索结果是摘要列表，**不要直接使用正文**。选 1-3 个最相关的用 `okp get` 获取完整内容：
 
 ```bash
-okp links fandom/genshin-impact/characters/klee
+okp get feishu-social/Link/太离谱了居然可以在自己画的虚拟世界游玩
 ```
 
-返回：
-- `outgoing` — 该 concept 引用了哪些概念
-- `backlinks` — 哪些概念引用了该 concept
+**禁止**批量拉取 body。
 
-### Step 6: 不满意时改写查询
-
-如果搜索结果不理想：
-1. 尝试不同的 query 措辞（全名 vs 简称、中文 vs 英文）
-2. 放宽过滤条件（去掉 type/tag 限制）
-3. 换一个领域（`okp domains` 查看其他 domain）
-4. 沿 links 图导航（从已知 concept 出发）
-
-## 查询技巧
-
-### 已知具体名称 → 路径式查询
+### Step 6: 沿关系导航
 
 ```bash
-okp search "fandom/genshin-impact"   # 按路径前缀
-okp get fandom/genshin-impact/characters/klee  # 精确 ID
+okp links feishu-social/Link/太离谱了居然可以在自己画的虚拟世界游玩
+# 返回 outgoing（该 concept 引用了谁）和 backlinks（谁引用了它）
 ```
 
-### 模糊概念 → 标签过滤 + 文本
+### Step 7: 不满意时改写查询
 
-```bash
-okp search "火元素" --domain fandom --tag pyro
-```
+1. 换措辞（全名 vs 简称、中文 vs 英文）
+2. 去掉 type/tag 限制放宽过滤
+3. 换 domain
+4. 从已知 concept 沿 links 导航
 
-### 探索性浏览 → 结构过滤
-
-```bash
-okp search --domain art-style    # 查所有画风
-okp search --domain fandom --type Character --limit 20  # 查所有角色
-```
-
-## 结果解读
+## 搜索结果字段
 
 | 字段 | 说明 |
-|------|------|
-| `id` | 唯一标识，可预测可构造 |
+|---|---|
+| `id` | 路径式唯一标识 `domain/type/slug` |
 | `domain` | 知识领域 |
 | `type` | 概念类型 |
-| `title` | 人类可读标题 |
-| `description` | 一句话摘要（卡片目录） |
-| `match_reason` | 为什么匹配（agent 据此判断置信度） |
-| `status` | 概念状态 |
+| `title` | 标题 |
+| `description` | 一句话摘要 |
+| `tags` | 标签列表 |
+| `frontmatter` | 扩展字段（sender、group、date 等，按 domain 不同） |
+| `match_reason` | 匹配原因 |
 
-**完整内容通过 `okp get <id>` 获取，即使已经出现在搜索结果中也必须重新 get。**
+**完整正文通过 `okp get <id>` 获取。**
 
 ## 不在本 skill 范围
 
-- 知识导入和清洗 → okp-import
-- 数据质量/去重检查 → `okp lint`（通过 okp-import 或手动执行）
-- OKF bundle 导出供人类 review → `okp export <domain>`
+- 知识导入 → okp-import
+- OKF bundle 导出 → `okp export <domain>`
