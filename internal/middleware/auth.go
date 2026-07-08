@@ -149,13 +149,18 @@ func getJWKS(ctx context.Context, logtoEndpoint string) (jwk.Set, error) {
 	}
 
 	slog.Info("JWKS 获取成功", "endpoint", jwksURL, "keys", set.Len())
-	// Debug: log key IDs
+	// 确保 key 有正确的 algorithm（Logto JWKS 有时不设 alg）
 	for i := 0; i < set.Len(); i++ {
-		key, ok := set.Key(i)
-		if ok {
+		if key, ok := set.Key(i); ok {
 			kid, _ := key.KeyID()
-			alg, _ := key.Algorithm()
-			slog.Info("JWKS key", "i", i, "kid", kid, "alg", alg)
+			if _, hasAlg := key.Algorithm(); !hasAlg {
+				// key 未声明 alg，设为 RS256（Logto 默认）
+				if err := key.Set("alg", "RS256"); err != nil {
+					slog.Warn("无法设置 key alg", "kid", kid, "error", err)
+				} else {
+					slog.Info("已补全 key algorithm", "kid", kid, "alg", "RS256")
+				}
+			}
 		}
 	}
 	jwksCachedSet = set
@@ -173,7 +178,6 @@ func validateLogtoToken(ctx context.Context, tokenStr string, logtoEndpoint, res
 
 	issuer := strings.TrimRight(logtoEndpoint, "/") + "/oidc"
 
-	// Debug: log JWT header
 	parsed, err := jwt.Parse([]byte(tokenStr),
 		jwt.WithKeySet(jwksSet),
 		jwt.WithIssuer(issuer),
@@ -181,21 +185,7 @@ func validateLogtoToken(ctx context.Context, tokenStr string, logtoEndpoint, res
 		jwt.WithValidate(true),
 	)
 	if err != nil {
-		// Try to extract kid from token for debugging
-		parts := strings.Split(tokenStr, ".")
-		if len(parts) >= 2 {
-			if hdr, e := b64Decode(parts[0]); e == nil {
-				var h struct {
-					Kid string `json:"kid"`
-					Alg string `json:"alg"`
-					Typ string `json:"typ"`
-				}
-				json.Unmarshal(hdr, &h)
-				slog.Warn("JWT 解析失败", "error", err, "token_kid", h.Kid, "token_alg", h.Alg, "token_typ", h.Typ)
-			}
-		} else {
-			slog.Warn("JWT 解析失败", "error", err)
-		}
+		slog.Warn("JWT 解析失败", "error", err)
 		return "", false
 	}
 
