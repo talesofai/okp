@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// SearchResult 搜索结果项，包含 concept 摘要 + 匹配原因 + frontmatter（供 agent 按字段过滤）
+// SearchResult 搜索结果项
 type SearchResult struct {
 	ID          string        `json:"id"`
 	Domain      string        `json:"domain"`
@@ -27,7 +27,6 @@ type SearchParams struct {
 	Type     string
 	Tags     []string
 	Scenario string
-	Status   string
 	Limit    int
 	Offset   int
 }
@@ -46,21 +45,14 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	if params.Limit > 200 {
 		params.Limit = 200
 	}
-	if params.Status == "" {
-		params.Status = "accepted"
-	}
 
 	q := db.Model(&model.Concept{})
 
-	// 结构过滤
 	if params.Domain != "" {
 		q = q.Where("domain = ?", params.Domain)
 	}
 	if params.Type != "" {
 		q = q.Where("type = ?", params.Type)
-	}
-	if params.Status != "" {
-		q = q.Where("status = ?", params.Status)
 	}
 	if len(params.Tags) > 0 {
 		if store.IsSQLite {
@@ -87,10 +79,8 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 				query, query+"%", like, like)
 			textSearch = true
 		} else if looksLikePath(query) {
-			// 3段路径式 ID → 精确匹配或前缀
 			q = q.Where("id = ? OR id LIKE ?", query, query+"%")
 		} else {
-			// 文本搜索：拆词，每词 ILIKE AND + trgm
 			words := splitQuery(query)
 			for _, w := range words {
 				like := "%" + w + "%"
@@ -101,13 +91,11 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		}
 	}
 
-	// 计数
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	// 排序
 	if textSearch && !store.IsSQLite && params.Query != "" {
 		words := splitQuery(params.Query)
 		if len(words) == 1 {
@@ -148,19 +136,12 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	return results, total, nil
 }
 
-// splitQuery 按空白拆词，过滤空串
 func splitQuery(q string) []string {
 	raw := strings.Fields(q)
-	out := make([]string, 0, len(raw))
-	for _, w := range raw {
-		if w != "" {
-			out = append(out, w)
-		}
-	}
-	if len(out) == 0 {
+	if len(raw) == 0 {
 		return []string{q}
 	}
-	return out
+	return raw
 }
 
 func matchReason(c model.Concept, query string, tags []string) string {
@@ -176,13 +157,8 @@ func matchReason(c model.Concept, query string, tags []string) string {
 	return "filter_match"
 }
 
-// looksLikePath 判断 query 是否是3段 OKF 路径（domain/type/slug）
 func looksLikePath(q string) bool {
-	if len(q) < 5 {
-		return false
-	}
-	count := strings.Count(q, "/")
-	return count >= 2
+	return len(q) >= 5 && strings.Count(q, "/") >= 2
 }
 
 // ── 领域清单 ─────────────────────────────────────────────────
@@ -196,7 +172,6 @@ func ListDomains() ([]DomainInfo, error) {
 	var domains []DomainInfo
 	err := store.DB.Model(&model.Concept{}).
 		Select("domain, count(*) as concept_count").
-		Where("status = ?", "accepted").
 		Group("domain").
 		Order("concept_count DESC").
 		Scan(&domains).Error
