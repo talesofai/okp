@@ -45,7 +45,7 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		params.Limit = 200
 	}
 	if params.Status == "" {
-		params.Status = "accepted"
+		// 默认不过滤 status，所有 status 都能搜到
 	}
 
 	q := db.Model(&model.Concept{})
@@ -57,6 +57,7 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	if params.Type != "" {
 		q = q.Where("type = ?", params.Type)
 	}
+	// Status 过滤（空 = 不过滤）
 	if params.Status != "" {
 		q = q.Where("status = ?", params.Status)
 	}
@@ -186,7 +187,6 @@ func ListDomains() ([]DomainInfo, error) {
 	var domains []DomainInfo
 	err := store.DB.Model(&model.Concept{}).
 		Select("domain, count(*) as concept_count").
-		Where("status = ?", "accepted").
 		Group("domain").
 		Order("concept_count DESC").
 		Scan(&domains).Error

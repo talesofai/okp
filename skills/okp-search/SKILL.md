@@ -29,13 +29,6 @@ okp domains   # 确认 API 可达，查看可用的知识领域
 okp domains    # 列出所有领域，确定目标 domain
 ```
 
-
-
-**注意**：概念默认按 `status=accepted` 搜索。如果无结果，尝试 `--status draft`：
-```bash
-okp search --domain fandom --type Character --status draft --limit 5
-```
-
 ### Step 2: 结构过滤收窄
 
 用领域、类型、标签、场景等过滤条件缩小范围：
@@ -142,4 +135,3 @@ okp search --domain fandom --type Character --limit 20  # 查所有角色
 - 知识导入和清洗 → okp-import
 - 数据质量/去重检查 → `okp lint`（通过 okp-import 或手动执行）
 - OKF bundle 导出供人类 review → `okp export <domain>`
-
