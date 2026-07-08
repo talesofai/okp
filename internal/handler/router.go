@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"strings"
 
@@ -49,6 +50,8 @@ func NewRouter() http.Handler {
 
 	r.Get("/api/v1/domains", listDomains)
 	r.Get("/api/v1/domains/{domain}/export", exportDomain)
+	r.Get("/api/v1/topics", listTopics)
+	r.Get("/api/v1/concepts/sample", sampleConcepts)
 	r.Get("/api/v1/health", healthCheck)
 
 	// Admin
@@ -201,17 +204,12 @@ func putConceptLinks(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/domains
 func listDomains(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	limit := parseIntDefault(q.Get("limit"), 50)
-	offset := parseIntDefault(q.Get("offset"), 0)
-
-	domains, total, err := service.ListDomains(q.Get("q"), limit, offset)
+	domains, err := service.ListDomains()
 	if err != nil {
 		slog.Error("获取领域列表失败", "error", err)
 		writeError(w, http.StatusInternalServerError, "获取领域列表失败")
 		return
 	}
-	w.Header().Set("X-Total-Count", itoa(total))
 	writeJSON(w, http.StatusOK, domains)
 }
 
@@ -312,4 +310,56 @@ func updateUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"uuid": uuid, "role": body.Role})
+}
+
+// GET /api/v1/topics
+func listTopics(w http.ResponseWriter, r *http.Request) {
+	domain := r.URL.Query().Get("domain")
+	type topicInfo struct {
+		Topic string `json:"topic"`
+		Count int64  `json:"count"`
+	}
+	var results []topicInfo
+	q := store.DB.Model(&model.Concept{}).
+		Select("frontmatter->>'topic' as topic, count(*) as count").
+		Where("frontmatter->>'topic' != ''").
+		Group("frontmatter->>'topic'").
+		Order("count DESC")
+	if domain != "" {
+		q = q.Where("domain = ?", domain)
+	}
+	if err := q.Scan(&results).Error; err != nil {
+		writeError(w, http.StatusInternalServerError, "获取 topic 列表失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, results)
+}
+
+// GET /api/v1/concepts/sample
+func sampleConcepts(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit := parseIntDefault(q.Get("limit"), 5)
+	if limit > 50 {
+		limit = 50
+	}
+	params := service.SearchParams{
+		Domain: q.Get("domain"),
+		Type:   q.Get("type"),
+		Limit:  limit,
+	}
+	// 随机排序：offset 随机
+	var total int64
+	store.DB.Model(&model.Concept{}).Where("status = 'accepted'").Count(&total)
+	if total > 0 {
+		params.Offset = int(rand.Int63n(total))
+		if int64(params.Offset)+int64(limit) > total {
+			params.Offset = 0
+		}
+	}
+	results, _, err := service.Search(params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "采样失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, results)
 }

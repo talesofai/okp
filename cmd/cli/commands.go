@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -150,25 +151,26 @@ func cmdSearch() *cobra.Command {
 		Short: "搜索概念",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := "/api/v1/concepts?"
+			params := url.Values{}
 			if len(args) > 0 {
-				path += "q=" + args[0] + "&"
+				params.Set("q", args[0])
 			}
 			if domain != "" {
-				path += "domain=" + domain + "&"
+				params.Set("domain", domain)
 			}
 			if typeFilter != "" {
-				path += "type=" + typeFilter + "&"
+				params.Set("type", typeFilter)
 			}
 			if scenario != "" {
-				path += "scenario=" + scenario + "&"
+				params.Set("scenario", scenario)
 			}
 			for _, t := range tags {
-				path += "tag=" + t + "&"
+				params.Add("tag", t)
 			}
-			path += fmt.Sprintf("limit=%d&offset=%d", limit, offset)
+			params.Set("limit", fmt.Sprintf("%d", limit))
+			params.Set("offset", fmt.Sprintf("%d", offset))
 
-			resp, err := doRequest("GET", path, nil)
+			resp, err := doRequest("GET", "/api/v1/concepts?"+params.Encode(), nil)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}
@@ -177,7 +179,8 @@ func cmdSearch() *cobra.Command {
 				fmt.Println(err)
 				return nil
 			}
-			fmt.Printf("共 %s 条结果\n", resp.Header.Get("X-Total-Count"))
+			// 结果数输出到 stderr，保持 stdout 纯 JSON（方便管道）
+			fmt.Fprintf(os.Stderr, "共 %s 条结果\n", resp.Header.Get("X-Total-Count"))
 			prettyPrint(results)
 			return nil
 		},
@@ -362,4 +365,63 @@ func cmdMigrate() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func cmdTopics() *cobra.Command {
+	var domain string
+	return &cobra.Command{
+		Use:   "topics",
+		Short: "列出所有 topic 及数量",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := "/api/v1/topics"
+			if domain != "" {
+				path += "?domain=" + url.QueryEscape(domain)
+			}
+			resp, err := doRequest("GET", path, nil)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var result []map[string]any
+			if err := readJSON(resp, &result); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return nil
+			}
+			prettyPrint(result)
+			return nil
+		},
+	}
+}
+
+func cmdSample() *cobra.Command {
+	var domain, typeFilter string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "sample",
+		Short: "随机采样 concept",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			params := url.Values{}
+			if domain != "" {
+				params.Set("domain", domain)
+			}
+			if typeFilter != "" {
+				params.Set("type", typeFilter)
+			}
+			params.Set("limit", fmt.Sprintf("%d", limit))
+			resp, err := doRequest("GET", "/api/v1/concepts/sample?"+params.Encode(), nil)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var results []map[string]any
+			if err := readJSON(resp, &results); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return nil
+			}
+			prettyPrint(results)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&domain, "domain", "d", "", "限定领域")
+	cmd.Flags().StringVarP(&typeFilter, "type", "t", "", "限定类型")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 5, "采样数量")
+	return cmd
 }

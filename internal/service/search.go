@@ -1,38 +1,42 @@
 package service
 
 import (
+	"strings"
+
 	"github.com/talesofai/okp/internal/model"
 	"github.com/talesofai/okp/internal/store"
 	"gorm.io/gorm/clause"
 )
 
-// SearchResult 搜索结果项，包含 concept 摘要 + 匹配原因（agent 可据此调整查询）。
+// SearchResult 搜索结果项，包含 concept 摘要 + 匹配原因 + frontmatter（供 agent 按字段过滤）
 type SearchResult struct {
-	ID          string   `json:"id"`
-	Domain      string   `json:"domain"`
-	Type        string   `json:"type"`
-	Title       string   `json:"title,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	MatchReason string   `json:"match_reason"` // "id_exact" | "title_trgm" | "description_like" | "tag_match"
+	ID          string        `json:"id"`
+	Domain      string        `json:"domain"`
+	Type        string        `json:"type"`
+	Title       string        `json:"title,omitempty"`
+	Description string        `json:"description,omitempty"`
+	Tags        []string      `json:"tags,omitempty"`
+	Frontmatter model.JSONMap `json:"frontmatter,omitempty"`
+	MatchReason string        `json:"match_reason"`
 }
 
 // SearchParams 搜索参数
 type SearchParams struct {
-	Query    string   // 自由文本
-	Domain   string   // 限定 domain
-	Type     string   // 限定 type
-	Tags     []string // 限定 tags（AND）
-	Scenario string   // frontmatter 内的 scenario 字段
-	Limit    int      // 默认 50
+	Query    string
+	Domain   string
+	Type     string
+	Tags     []string
+	Scenario string
+	Status   string
+	Limit    int
 	Offset   int
 }
 
-// Search 执行概念搜索。服务端 query planning：
-//   - 路径式 → 精确 ID 匹配
-//   - 短实体名（≤15 字符）→ trgm 子串 + 相似度
-//   - 长查询 → 全文（trgm similarity，后续可升级 pgroonga）
-//   - 无 query → 结构过滤（domain/type/tag/scenario）
+// Search 执行概念搜索。
+//   - 路径式（含2个以上 /） → 精确 ID 或前缀
+//   - 多词查询（含空格）→ 拆词后每词 ILIKE AND
+//   - 单词/短语 → trgm 相似度 + ILIKE
+//   - 无 query → 结构过滤
 func Search(params SearchParams) ([]SearchResult, int64, error) {
 	db := store.DB
 
@@ -41,6 +45,9 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	}
 	if params.Limit > 200 {
 		params.Limit = 200
+	}
+	if params.Status == "" {
+		params.Status = "accepted"
 	}
 
 	q := db.Model(&model.Concept{})
@@ -51,6 +58,9 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	}
 	if params.Type != "" {
 		q = q.Where("type = ?", params.Type)
+	}
+	if params.Status != "" {
+		q = q.Where("status = ?", params.Status)
 	}
 	if len(params.Tags) > 0 {
 		if store.IsSQLite {
@@ -67,29 +77,27 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		q = q.Where("frontmatter->>'scenario' = ?", params.Scenario)
 	}
 
-	// 文本查询 → query planning
+	// 文本查询
+	textSearch := false
 	if params.Query != "" {
 		query := params.Query
 		if store.IsSQLite {
-			// SQLite：简单 LIKE（无 trgm）
 			like := "%" + query + "%"
 			q = q.Where("(id = ? OR id LIKE ? OR title LIKE ? OR description LIKE ?)",
 				query, query+"%", like, like)
+			textSearch = true
 		} else if looksLikePath(query) {
-			// 路径式 → 精确 ID
+			// 3段路径式 ID → 精确匹配或前缀
 			q = q.Where("id = ? OR id LIKE ?", query, query+"%")
-		} else if len([]rune(query)) <= 15 {
-			// 短实体名 → trgm 子串 + 相似度排序
-			q = q.Where(
-				"(title % ? OR similarity(title, ?) > 0.3 OR description ILIKE ?)",
-				query, query, "%"+query+"%",
-			)
 		} else {
-			// 长查询 → trgm similarity（后续可升级 pgroonga）
-			q = q.Where(
-				"(title % ? OR similarity(title, ?) > 0.2 OR description ILIKE ?)",
-				query, query, "%"+query+"%",
-			)
+			// 文本搜索：拆词，每词 ILIKE AND + trgm
+			words := splitQuery(query)
+			for _, w := range words {
+				like := "%" + w + "%"
+				q = q.Where("(title ILIKE ? OR description ILIKE ? OR similarity(title, ?) > 0.2)",
+					like, like, w)
+			}
+			textSearch = true
 		}
 	}
 
@@ -99,16 +107,23 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		return nil, 0, err
 	}
 
-	// 排序（结构优于文本）
-	if params.Query != "" && !store.IsSQLite && !looksLikePath(params.Query) {
-		q = q.Clauses(clause.OrderBy{
-			Expression: clause.Expr{SQL: "similarity(title, ?) DESC", Vars: []interface{}{params.Query}},
-		})
+	// 排序
+	if textSearch && !store.IsSQLite && params.Query != "" {
+		words := splitQuery(params.Query)
+		if len(words) == 1 {
+			q = q.Clauses(clause.OrderBy{
+				Expression: clause.Expr{
+					SQL:  "similarity(title, ?) DESC",
+					Vars: []interface{}{words[0]},
+				},
+			})
+		} else {
+			q = q.Order("updated_at DESC")
+		}
 	} else {
 		q = q.Order("updated_at DESC")
 	}
 
-	// 分页
 	q = q.Offset(params.Offset).Limit(params.Limit)
 
 	var concepts []model.Concept
@@ -116,7 +131,6 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		return nil, 0, err
 	}
 
-	// 转换为 SearchResult + 添加 match_reason
 	results := make([]SearchResult, len(concepts))
 	for i, c := range concepts {
 		results[i] = SearchResult{
@@ -126,6 +140,7 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 			Title:       c.Title,
 			Description: c.Description,
 			Tags:        []string(c.Tags),
+			Frontmatter: c.Frontmatter,
 			MatchReason: matchReason(c, params.Query, params.Tags),
 		}
 	}
@@ -133,7 +148,21 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	return results, total, nil
 }
 
-// matchReason 生成人类可读的匹配原因（帮助 agent 决定是否收窄查询）。
+// splitQuery 按空白拆词，过滤空串
+func splitQuery(q string) []string {
+	raw := strings.Fields(q)
+	out := make([]string, 0, len(raw))
+	for _, w := range raw {
+		if w != "" {
+			out = append(out, w)
+		}
+	}
+	if len(out) == 0 {
+		return []string{q}
+	}
+	return out
+}
+
 func matchReason(c model.Concept, query string, tags []string) string {
 	if query != "" && c.ID == query {
 		return "id_exact"
@@ -147,64 +176,29 @@ func matchReason(c model.Concept, query string, tags []string) string {
 	return "filter_match"
 }
 
-// LooksLikePath 判断 query 是否像路径式 ID（包含 /）
-// OKP concept ID 格式: domain/type/slug（OKF 原生）
+// looksLikePath 判断 query 是否是3段 OKF 路径（domain/type/slug）
 func looksLikePath(q string) bool {
-	return len(q) > 3 && q[0] != ' ' && containsAny(q, "/")
-}
-
-func containsAny(s string, substrs ...string) bool {
-	for _, sub := range substrs {
-		for i := 0; i <= len(s)-len(sub); i++ {
-			if s[i:i+len(sub)] == sub {
-				return true
-			}
-		}
+	if len(q) < 5 {
+		return false
 	}
-	return false
+	count := strings.Count(q, "/")
+	return count >= 2
 }
 
 // ── 领域清单 ─────────────────────────────────────────────────
 
-// DomainInfo 领域信息
 type DomainInfo struct {
-	Domain      string `json:"domain"`
-	ConceptCount int64 `json:"concept_count"`
+	Domain       string `json:"domain"`
+	ConceptCount int64  `json:"concept_count"`
 }
 
-// ListDomains 列出所有 domain 及其 concept 数量，支持搜索和分页。
-func ListDomains(q string, limit, offset int) ([]DomainInfo, int64, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		limit = 200
-	}
-
-	db := store.DB.Model(&model.Concept{})
-	if q != "" {
-		db = db.Where("domain ILIKE ?", "%"+q+"%")
-	}
-
-	var total int64
-	// 子查询：每个 domain 一条
-	subQuery := store.DB.Model(&model.Concept{}).
-		Select("domain").
-		Group("domain")
-	if q != "" {
-		subQuery = subQuery.Where("domain ILIKE ?", "%"+q+"%")
-	}
-	if err := subQuery.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
+func ListDomains() ([]DomainInfo, error) {
 	var domains []DomainInfo
-	err := db.
+	err := store.DB.Model(&model.Concept{}).
 		Select("domain, count(*) as concept_count").
+		Where("status = ?", "accepted").
 		Group("domain").
 		Order("concept_count DESC").
-		Limit(limit).
-		Offset(offset).
 		Scan(&domains).Error
-	return domains, total, err
+	return domains, err
 }

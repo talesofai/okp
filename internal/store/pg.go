@@ -96,8 +96,8 @@ func Init() {
 		// 复合索引：domain + type（领域过滤查询优化）
 		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_domain_type ON concepts (domain, type)`).Error
 		// 状态 + 领域索引：加速 domains 列表、领域统计查询
-		// 中文全文搜索：正文 ILIKE 加速（pg_trgm 已支持非字母语言）
-		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_description_trgm ON concepts USING gin (description gin_trgm_ops)`).Error
+		// frontmatter GIN 全列索引（支持所有 key 的 @> 包含查询）
+		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_frontmatter_gin ON concepts USING gin (frontmatter)`).Error
 	}
 
 	slog.Info("数据库迁移完成")
