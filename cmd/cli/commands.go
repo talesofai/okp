@@ -143,7 +143,7 @@ func cmdGet() *cobra.Command {
 func cmdSearch() *cobra.Command {
 	var domain, typeFilter, status, scenario string
 	var tags []string
-	var limit int
+	var limit, offset int
 
 	cmd := &cobra.Command{
 		Use:   "search [query]",
@@ -169,7 +169,7 @@ func cmdSearch() *cobra.Command {
 			for _, t := range tags {
 				path += "tag=" + t + "&"
 			}
-			path += fmt.Sprintf("limit=%d", limit)
+			path += fmt.Sprintf("limit=%d&offset=%d", limit, offset)
 
 			resp, err := doRequest("GET", path, nil)
 			if err != nil {
@@ -191,6 +191,7 @@ func cmdSearch() *cobra.Command {
 	cmd.Flags().StringVar(&scenario, "scenario", "", "限定场景 (frontmatter.scenario)")
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "限定标签（可重复）")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "返回数量上限")
+	cmd.Flags().IntVar(&offset, "offset", 0, "分页偏移")
 	return cmd
 }
 
@@ -237,12 +238,14 @@ func cmdBatch() *cobra.Command {
 }
 
 func cmdLinks() *cobra.Command {
+	var limit, offset int
 	cmd := &cobra.Command{
 		Use:   "links <id>",
 		Short: "查看 concept 的出链和反向引用",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			resp, err := doRequest("GET", "/api/v1/links/"+args[0], nil)
+			path := fmt.Sprintf("/api/v1/links/%s?limit=%d&offset=%d", args[0], limit, offset)
+			resp, err := doRequest("GET", path, nil)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}
@@ -251,10 +254,14 @@ func cmdLinks() *cobra.Command {
 				fmt.Println(err)
 				return nil
 			}
+			fmt.Printf("outgoing: %s, backlinks: %s\n",
+				resp.Header.Get("X-Total-Outgoing"), resp.Header.Get("X-Total-Backlinks"))
 			prettyPrint(result)
 			return nil
 		},
 	}
+	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "返回数量上限")
+	cmd.Flags().IntVar(&offset, "offset", 0, "分页偏移")
 	return cmd
 }
 
@@ -312,12 +319,18 @@ func cmdLint() *cobra.Command {
 }
 
 func cmdDomains() *cobra.Command {
-	return &cobra.Command{
+	var limit, offset int
+	var query string
+	cmd := &cobra.Command{
 		Use:   "domains",
 		Short: "列出所有知识领域",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			resp, err := doRequest("GET", "/api/v1/domains", nil)
+			path := fmt.Sprintf("/api/v1/domains?limit=%d&offset=%d", limit, offset)
+			if query != "" {
+				path += "&q=" + query
+			}
+			resp, err := doRequest("GET", path, nil)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}
@@ -326,10 +339,15 @@ func cmdDomains() *cobra.Command {
 				fmt.Println(err)
 				return nil
 			}
+			fmt.Printf("共 %s 个领域\n", resp.Header.Get("X-Total-Count"))
 			prettyPrint(result)
 			return nil
 		},
 	}
+	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "返回数量上限")
+	cmd.Flags().IntVar(&offset, "offset", 0, "分页偏移")
+	cmd.Flags().StringVarP(&query, "query", "q", "", "搜索领域名")
+	return cmd
 }
 
 func cmdMigrate() *cobra.Command {
