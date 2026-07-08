@@ -37,7 +37,8 @@ func NewRouter() http.Handler {
 	r.Use(auth.Auth)
 
 	// API v1 — concept ID 使用 / 分隔符（OKF 原生格式，如 fandom/genshin-impact/characters/klee）
-	// concepts 用 catch-all /* 捕获含 / 的多段 ID；links 拆为独立顶层资源（避开 * 不能在中间的限制）
+	// concepts 用 catch-all /* 捕获含 / 的多段 ID
+	r.Patch("/api/v1/concepts/*", patchConcept)  // 仅更新 status（不覆盖其他字段）
 	r.Post("/api/v1/concepts:batch", batchUpsert)
 	r.Get("/api/v1/concepts", listConcepts)
 	r.Put("/api/v1/concepts/*", upsertConcept)
@@ -101,6 +102,27 @@ func upsertConcept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// PATCH /api/v1/concepts/{id} — 仅更新 status，不覆盖其他字段
+func patchConcept(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "*")
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if body.Status != "draft" && body.Status != "accepted" {
+		writeError(w, http.StatusBadRequest, "status must be 'draft' or 'accepted'")
+		return
+	}
+	if err := store.DB.Model(&model.Concept{}).Where("id = ?", id).Update("status", body.Status).Error; err != nil {
+		writeError(w, http.StatusNotFound, "concept 不存在: "+id)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": body.Status})
 }
 
 // POST /api/v1/concepts:batch
