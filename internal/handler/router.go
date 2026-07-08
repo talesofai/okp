@@ -49,6 +49,8 @@ func NewRouter() http.Handler {
 
 	r.Get("/api/v1/domains", listDomains)
 	r.Get("/api/v1/domains/{domain}/export", exportDomain)
+	r.Get("/api/v1/domains/{domain}", getDomainMeta)
+	r.Put("/api/v1/domains/{domain}", putDomainMeta)
 	r.Get("/api/v1/health", healthCheck)
 
 	// Admin
@@ -307,4 +309,39 @@ func updateUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"uuid": uuid, "role": body.Role})
+}
+
+// GET /api/v1/domains/{domain}
+func getDomainMeta(w http.ResponseWriter, r *http.Request) {
+	domain := chi.URLParam(r, "domain")
+	meta, err := service.GetDomainMeta(domain)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "domain 没有 README: "+domain)
+		return
+	}
+	writeJSON(w, http.StatusOK, meta)
+}
+
+// PUT /api/v1/domains/{domain}
+// Body: {"readme": "...markdown..."}  或直接传 markdown 文本
+func putDomainMeta(w http.ResponseWriter, r *http.Request) {
+	domain := chi.URLParam(r, "domain")
+	var body struct {
+		Readme string `json:"readme"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "JSON 解析失败: "+err.Error())
+		return
+	}
+	if body.Readme == "" {
+		writeError(w, http.StatusBadRequest, "readme 不能为空")
+		return
+	}
+	meta, err := service.PutDomainMeta(domain, body.Readme)
+	if err != nil {
+		slog.Error("domain meta 写入失败", "domain", domain, "error", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, meta)
 }

@@ -349,21 +349,57 @@ func cmdDomains() *cobra.Command {
 	return cmd
 }
 
-func cmdMigrate() *cobra.Command {
-	return &cobra.Command{
-		Use:   "migrate",
-		Short: "触发数据库自动迁移（通过 API 间接执行）",
-		Long:  "数据库迁移在 API 启动时自动执行。此命令仅用于健康检查确认迁移状态。",
+func cmdDomain() *cobra.Command {
+	var setFile string
+	cmd := &cobra.Command{
+		Use:   "domain <domain>",
+		Short: "查看或设置 domain README 和 schema",
+		Long: `查看或设置 domain 的 README 和 frontmatter schema。
+
+无参数：打印 README（agent 可阅读）
+--set readme.md：从文件更新 README 和 schema`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			resp, err := doRequest("GET", "/api/v1/health", nil)
-			if err != nil {
-				return fmt.Errorf("API 不可达: %w", err)
+			domain := args[0]
+
+			if setFile != "" {
+				b, err := os.ReadFile(setFile)
+				if err != nil {
+					return fmt.Errorf("读取文件失败: %w", err)
+				}
+				body := map[string]any{"readme": string(b)}
+				resp, err := doRequest("PUT", "/api/v1/domains/"+domain, body)
+				if err != nil {
+					return fmt.Errorf("请求失败: %w", err)
+				}
+				var result map[string]any
+				if err := readJSON(resp, &result); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					return nil
+				}
+				fmt.Fprintf(os.Stderr, "✅ domain %s README 已更新\n", domain)
+				prettyPrint(result)
+				return nil
 			}
-			s, _ := readRaw(resp)
-			fmt.Println("API 状态:", s)
-			fmt.Println("迁移已在 API 启动时自动执行。")
+
+			// 读取 README——直接打印 markdown，供 agent 阅读
+			resp, err := doRequest("GET", "/api/v1/domains/"+domain, nil)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var result map[string]any
+			if err := readJSON(resp, &result); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return nil
+			}
+			if readme, ok := result["readme"].(string); ok && readme != "" {
+				fmt.Println(readme)
+			} else {
+				fmt.Fprintf(os.Stderr, "domain %s 暂无 README\n", domain)
+			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&setFile, "set", "", "从 markdown 文件更新 README")
+	return cmd
 }
-

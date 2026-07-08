@@ -45,7 +45,7 @@ func main() {
 	rootCmd.AddCommand(cmdExport())
 	rootCmd.AddCommand(cmdLint())
 	rootCmd.AddCommand(cmdDomains())
-	rootCmd.AddCommand(cmdMigrate())
+	rootCmd.AddCommand(cmdDomain())
 	rootCmd.AddCommand(cmdAuth())
 	rootCmd.AddCommand(cmdUpdate())
 

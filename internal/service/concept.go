@@ -112,6 +112,21 @@ func PutConcept(c *model.Concept) (*model.Concept, []ValidationError, error) {
 		return nil, errs, nil
 	}
 
+	// frontmatter schema 校验（按 domain README 定义，软警告不阻断写入）
+	if len(c.Frontmatter) > 0 {
+		if fmErrs := ValidateFrontmatter(c.Domain, c.Frontmatter); len(fmErrs) > 0 {
+			var errs []ValidationError
+			for _, msg := range fmErrs {
+				errs = append(errs, ValidationError{
+					Field:   "frontmatter",
+					Message: msg,
+					Fix:     "按照 domain README 中的 schema 填写必填字段",
+				})
+			}
+			return nil, errs, nil
+		}
+	}
+
 	db := store.DB
 
 	// 去重：search-before-insert（同 domain+type 下 trgm 标题相似度）
