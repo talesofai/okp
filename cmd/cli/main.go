@@ -46,21 +46,10 @@ func main() {
 	rootCmd.AddCommand(cmdLint())
 	rootCmd.AddCommand(cmdDomains())
 	rootCmd.AddCommand(cmdMigrate())
+	rootCmd.AddCommand(cmdAuth())
+	rootCmd.AddCommand(cmdUpdate())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
-}
-
-// resolveToken 按优先级获取 token：
-// 1. OKP_API_TOKEN 环境变量
-// 2. COHUB_EXECUTION_TOKEN（在 cohub sandbox 中自动注入）
-func resolveToken() string {
-	if t := os.Getenv("OKP_API_TOKEN"); t != "" {
-		return t
-	}
-	if t := os.Getenv("COHUB_EXECUTION_TOKEN"); t != "" {
-		return t
-	}
-	return ""
 }
