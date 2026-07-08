@@ -338,7 +338,7 @@ func cmdDomains() *cobra.Command {
 				fmt.Println(err)
 				return nil
 			}
-			fmt.Printf("共 %s 个领域\n", resp.Header.Get("X-Total-Count"))
+			fmt.Fprintf(os.Stderr, "共 %d 个领域\n", len(result))
 			prettyPrint(result)
 			return nil
 		},
