@@ -1,6 +1,6 @@
 ---
 name: okp-search
-version: 1.1.0
+version: 1.2.0
 description: "在 Open Knowledge Pool 中搜索和导航知识。面向消费 agent：filters 收窄 → light list → 精读少数 → 沿 links 导航。"
 metadata:
   requires:
@@ -28,55 +28,61 @@ okp domains   # 确认 API 可达，查看可用的知识领域
 ### Step 1: 确定搜索范围
 
 ```bash
-okp domains    # 列出所有领域及数量，确定目标 domain
+okp domains    # 列出所有领域及数量
+okp domain <domain>   # 读该 domain 的 README（含 frontmatter schema 定义）
 ```
 
-如果不确定 domain 的数据内容和字段规范，先读 README：
+### Step 2: 不熟悉 domain 时先 sample
 
 ```bash
-okp domain <domain>   # 打印该 domain 的 README（含 frontmatter schema）
+okp sample --domain feishu-social --limit 5   # 随机采样，了解数据结构
+okp sample --domain artist-styles             # 探索未知领域
 ```
 
-### Step 2: 结构过滤收窄
+### Step 3: 结构过滤收窄
 
 ```bash
 okp search --domain feishu-social --type Link
 okp search --domain stardew-valley --tag 农业
-okp search --domain artist-styles --type Artist
+okp search --domain artist-styles --type BGMReference
 ```
 
-### Step 3: 文本搜索
+### Step 4: frontmatter 字段过滤（sequential / grouped 数据专用）
 
 ```bash
-# 单词或短语
+# 按发送者过滤
+okp search --domain feishu-social --filter sender=寇佳新
+
+# 按来源群过滤 + 按日期排序
+okp search --domain feishu-social --filter "group=the World Builders" --sort date:desc
+
+# 多字段同时过滤（AND 逻辑）
+okp search --domain feishu-social --filter sender=阿头 --filter platform=github
+
+# 时序数据按时间排序
+okp search --domain tech-monitor --sort date:desc --limit 10
+```
+
+**`--filter` 的字段名来自 domain README 的 schema 定义，先用 `okp domain <domain>` 查阅。**
+
+### Step 5: 文本搜索
+
+```bash
 okp search "可莉" --domain fandom
 okp search "水墨 留白" --domain artist-styles   # 多词自动拆分，每词 ILIKE AND
-
-# 注意：包含 / 的字符串按文本搜索，不当作路径
-okp search "emilkowalski/skills"
+okp search "emilkowalski/skills"               # 含 / 的字符串按文本处理
 ```
 
 **`match_reason` 字段含义**：
 - `id_exact` — 精确 ID 匹配
-- `text_match` — 标题/描述文本命中
+- `text_match` — 标题/描述命中
 - `tag_match` — 标签匹配
 - `filter_match` — 仅结构过滤命中
+- `sample` — 随机采样结果
 
-### Step 4: 按 frontmatter 字段筛选
+### Step 6: Light list → 精读
 
-搜索结果现在包含 `frontmatter` 字段，可在结果中按字段筛选：
-
-```bash
-# 获取 feishu-social 结果后，按 group 过滤
-okp search --domain feishu-social | jq '[.[] | select(.frontmatter.group == "feishu-100x")]'
-
-# 按 sender 过滤
-okp search --domain feishu-social | jq '[.[] | select(.frontmatter.sender == "kjx")]'
-```
-
-### Step 5: Light list → 精读
-
-搜索结果是摘要列表，**不要直接使用正文**。选 1-3 个最相关的用 `okp get` 获取完整内容：
+搜索和 sample 返回的是摘要列表，含 `frontmatter` 字段。选 1-3 个最相关的用 `okp get` 获取完整内容（含 body）：
 
 ```bash
 okp get feishu-social/Link/太离谱了居然可以在自己画的虚拟世界游玩
@@ -84,31 +90,38 @@ okp get feishu-social/Link/太离谱了居然可以在自己画的虚拟世界�
 
 **禁止**批量拉取 body。
 
-### Step 6: 沿关系导航
+### Step 7: 沿关系导航
 
 ```bash
 okp links feishu-social/Link/太离谱了居然可以在自己画的虚拟世界游玩
-# 返回 outgoing（该 concept 引用了谁）和 backlinks（谁引用了它）
 ```
 
-### Step 7: 不满意时改写查询
+### Step 8: 不满意时改写查询
 
 1. 换措辞（全名 vs 简称、中文 vs 英文）
-2. 去掉 type/tag 限制放宽过滤
+2. 去掉 type/tag/filter 限制放宽
 3. 换 domain
-4. 从已知 concept 沿 links 导航
+4. 用 `sample` 重新了解数据分布
+
+## 排序参数（`--sort`）
+
+| 参数 | 说明 | 适用场景 |
+|---|---|---|
+| `updated_at:desc` | 最近更新优先（默认） | 通用 |
+| `updated_at:asc` | 最早更新优先 | 历史回溯 |
+| `date:desc` | frontmatter.date 降序 | feishu-social、geopolitics 等时序数据 |
+| `date:asc` | frontmatter.date 升序 | 按时间顺序阅读 |
+| `title:asc` | 标题字母序 | wiki/entity 类目 |
 
 ## 搜索结果字段
 
 | 字段 | 说明 |
 |---|---|
 | `id` | 路径式唯一标识 `domain/type/slug` |
-| `domain` | 知识领域 |
-| `type` | 概念类型 |
-| `title` | 标题 |
-| `description` | 一句话摘要 |
+| `domain` / `type` | 领域和类型 |
+| `title` / `description` | 标题和摘要 |
 | `tags` | 标签列表 |
-| `frontmatter` | 扩展字段（sender、group、date 等，按 domain 不同） |
+| `frontmatter` | 扩展字段（sender、group、date 等，按 domain 不同）|
 | `match_reason` | 匹配原因 |
 
 **完整正文通过 `okp get <id>` 获取。**
