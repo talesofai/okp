@@ -180,6 +180,7 @@ func validateLogtoToken(ctx context.Context, tokenStr string, logtoEndpoint, res
 		jwt.WithValidate(true),
 	)
 	if err != nil {
+		slog.Warn("JWT 解析失败", "error", err, "issuer", issuer, "audience", resource)
 		return "", false
 	}
 
