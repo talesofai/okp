@@ -149,6 +149,15 @@ func getJWKS(ctx context.Context, logtoEndpoint string) (jwk.Set, error) {
 	}
 
 	slog.Info("JWKS 获取成功", "endpoint", jwksURL, "keys", set.Len())
+	// Debug: log key IDs
+	for i := 0; i < set.Len(); i++ {
+		key, ok := set.Key(i)
+		if ok {
+			kid, _ := key.KeyID()
+			alg, _ := key.Algorithm()
+			slog.Info("JWKS key", "i", i, "kid", kid, "alg", alg)
+		}
+	}
 	jwksCachedSet = set
 	jwksEndpoint = logtoEndpoint
 	jwksExpiry = time.Now().Add(1 * time.Hour)
@@ -164,6 +173,7 @@ func validateLogtoToken(ctx context.Context, tokenStr string, logtoEndpoint, res
 
 	issuer := strings.TrimRight(logtoEndpoint, "/") + "/oidc"
 
+	// Debug: log JWT header
 	parsed, err := jwt.Parse([]byte(tokenStr),
 		jwt.WithKeySet(jwksSet),
 		jwt.WithIssuer(issuer),
@@ -171,7 +181,21 @@ func validateLogtoToken(ctx context.Context, tokenStr string, logtoEndpoint, res
 		jwt.WithValidate(true),
 	)
 	if err != nil {
-		slog.Warn("JWT 解析失败", "error", err, "issuer", issuer, "audience", resource)
+		// Try to extract kid from token for debugging
+		parts := strings.Split(tokenStr, ".")
+		if len(parts) >= 2 {
+			if hdr, e := b64Decode(parts[0]); e == nil {
+				var h struct {
+					Kid string `json:"kid"`
+					Alg string `json:"alg"`
+					Typ string `json:"typ"`
+				}
+				json.Unmarshal(hdr, &h)
+				slog.Warn("JWT 解析失败", "error", err, "token_kid", h.Kid, "token_alg", h.Alg, "token_typ", h.Typ)
+			}
+		} else {
+			slog.Warn("JWT 解析失败", "error", err)
+		}
 		return "", false
 	}
 
