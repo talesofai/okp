@@ -38,7 +38,7 @@ for PKG_SUFFIX in "${!PLATFORMS[@]}"; do
 
   echo "  🔨 $GOOS/$GOARCH → $PKG_SUFFIX"
   CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
-    go build -ldflags="-s -w" \
+    go build -ldflags="-s -w -X main.version=$NEW_VERSION" \
     -o "$BIN_DIR/$BIN_NAME" \
     "$REPO_ROOT/cmd/cli"
 
