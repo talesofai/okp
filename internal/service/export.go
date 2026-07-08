@@ -10,7 +10,7 @@ import (
 	"github.com/talesofai/okp/internal/store"
 )
 
-// ExportDomain 将指定 domain 的所有 accepted concept 导出为 OKF bundle 文件树。
+// ExportDomain 将指定 domain 的所有 concept 导出为 OKF bundle 文件树。
 // 输出结构：
 //
 //	{outDir}/{domain}/
@@ -20,13 +20,13 @@ import (
 //	    ...
 func ExportDomain(domain, outDir string) (string, error) {
 	var concepts []model.Concept
-	if err := store.DB.Where("domain = ? AND status = ?", domain, "accepted").
+	if err := store.DB.Where("domain = ?", domain).
 		Order("type, id").
 		Find(&concepts).Error; err != nil {
 		return "", err
 	}
 	if len(concepts) == 0 {
-		return "", fmt.Errorf("domain '%s' 下无 accepted concept", domain)
+		return "", fmt.Errorf("domain '%s' 下无 concept", domain)
 	}
 
 	bundleDir := filepath.Join(outDir, domain)

@@ -133,15 +133,7 @@ func PutConcept(c *model.Concept) (*model.Concept, []ValidationError, error) {
 			// 内容未变 → skip
 			return &prev, nil, nil
 		}
-		// 内容变化 → 如果之前是 accepted，降级重审
-		if prev.Status == "accepted" {
-			c.Status = "draft"
-			if c.Frontmatter == nil {
-				c.Frontmatter = make(model.JSONMap)
-			}
-			c.Frontmatter["needs_review"] = true
-		}
-		// 更新
+		// 内容变化 → 更新
 		c.CreatedAt = prev.CreatedAt
 		if err := db.Save(c).Error; err != nil {
 			return nil, nil, err

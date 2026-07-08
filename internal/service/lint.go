@@ -51,7 +51,7 @@ type LintReport struct {
 	Orphans      []string `json:"orphans"`       // 无入链无出链的 concept
 	BrokenLinks  []BrokenLink `json:"broken_links"` // 指向不存在 concept 的链接
 	Duplicates   []Duplicate `json:"duplicates"`   // 疑似重复（同 domain+type 下 title 高度相似）
-	Stale        []string `json:"stale"`          // 超过 90 天未更新且状态仍为 draft 的 concept
+	Stale        []string `json:"stale"`          // 超过 90 天未更新的 concept
 }
 
 type BrokenLink struct {
@@ -82,7 +82,6 @@ func RunLint() (*LintReport, error) {
 		SELECT c.id FROM concepts c
 		WHERE c.id NOT IN (SELECT DISTINCT from_id FROM links)
 		AND c.id NOT IN (SELECT DISTINCT to_id FROM links)
-		AND c.status = 'accepted'
 	`).Scan(&report.Orphans)
 
 	// 疑似重复：同 domain+type 下 title 高度相似
@@ -107,15 +106,15 @@ func RunLint() (*LintReport, error) {
 		`).Scan(&report.Duplicates)
 	}
 
-	// 陈旧 draft
+	// 陈旧概念（90 天未更新）
 	if store.IsSQLite {
 		ninetyDaysAgo := time.Now().Add(-90 * 24 * time.Hour)
 		db.Model(&model.Concept{}).
-			Where("status = 'draft' AND updated_at < ?", ninetyDaysAgo).
+			Where("updated_at < ?", ninetyDaysAgo).
 			Pluck("id", &report.Stale)
 	} else {
 		db.Model(&model.Concept{}).
-			Where("status = 'draft' AND updated_at < NOW() - INTERVAL '90 days'").
+			Where("updated_at < NOW() - INTERVAL '90 days'").
 			Pluck("id", &report.Stale)
 	}
 

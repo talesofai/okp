@@ -24,7 +24,7 @@ type SearchParams struct {
 	Domain   string   // 限定 domain
 	Type     string   // 限定 type
 	Tags     []string // 限定 tags（AND）
-	Status   string   // 限定 status，默认 "accepted"
+	Status   string   // 限定 status（空 = 不过滤）
 	Scenario string   // frontmatter 内的 scenario 字段
 	Limit    int      // 默认 50
 	Offset   int

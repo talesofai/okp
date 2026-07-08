@@ -269,7 +269,7 @@ func exportDomain(w http.ResponseWriter, r *http.Request) {
 
 	bundlePath, err := service.ExportDomain(domain, outDir)
 	if err != nil {
-		if strings.Contains(err.Error(), "无 accepted concept") {
+		if strings.Contains(err.Error(), "无 concept") {
 			writeError(w, http.StatusNotFound, err.Error())
 		} else {
 			slog.Error("导出失败", "error", err)
