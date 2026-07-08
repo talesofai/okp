@@ -33,7 +33,7 @@ func Load() {
 		LogLevel:     envDefault("OKP_LOG_LEVEL", "info"),
 		DomainTokens: parseDomainTokens(os.Getenv("OKP_DOMAIN_TOKENS")),
 
-		LogtoEndpoint:     envDefault("OKP_LOGTO_ENDPOINT", "https://auth.neta.art"),
+		LogtoEndpoint:     envDefault("LOGTO_ENDPOINT", envDefault("OKP_LOGTO_ENDPOINT", "https://auth.neta.art")),
 		LogtoResource:     envDefault("OKP_LOGTO_RESOURCE", "https://api.talesofai"),
 		ExecutionGrantKey: os.Getenv("OKP_EXECUTION_GRANT_KEY"),
 	}

@@ -138,19 +138,29 @@ func getJWKS(ctx context.Context, logtoEndpoint string) (jwk.Set, error) {
 		return jwksCache.Lookup(ctx, logtoEndpoint+"/oidc/jwks")
 	}
 
-	cache, err := jwk.NewCache(ctx, httprc.NewClient())
+	// 用带超时的 HTTP client
+	httpClient := httprc.NewClient(
+		httprc.WithHTTPClient(&http.Client{Timeout: 15 * time.Second}),
+	)
+
+	cache, err := jwk.NewCache(ctx, httpClient)
 	if err != nil {
 		return nil, err
 	}
 	if err := cache.Register(ctx, logtoEndpoint+"/oidc/jwks"); err != nil {
 		return nil, err
 	}
-	if _, err := cache.Refresh(ctx, logtoEndpoint+"/oidc/jwks"); err != nil {
+	// 首次刷新，加超时
+	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if _, err := cache.Refresh(fetchCtx, logtoEndpoint+"/oidc/jwks"); err != nil {
+		slog.Error("JWKS 首次获取失败", "endpoint", logtoEndpoint+"/oidc/jwks", "error", err)
 		return nil, err
 	}
 
 	jwksCache = cache
 	jwksEndpoint = logtoEndpoint
+	slog.Info("JWKS 缓存初始化成功", "endpoint", logtoEndpoint)
 	return cache.Lookup(ctx, logtoEndpoint+"/oidc/jwks")
 }
 
