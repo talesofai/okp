@@ -52,6 +52,8 @@ func NewRouter() http.Handler {
 	r.Get("/api/v1/domains/{domain}/export", exportDomain)
 	r.Get("/api/v1/domains/{domain}", getDomainMeta)
 	r.Put("/api/v1/domains/{domain}", putDomainMeta)
+	r.Get("/api/v1/embed/stats", embedStats)
+	r.Post("/api/v1/embed/batch", embedBatch)
 	r.Get("/api/v1/health", healthCheck)
 
 	// Admin
@@ -370,4 +372,23 @@ func sampleConcepts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, results)
+}
+
+// GET /api/v1/embed/stats
+func embedStats(w http.ResponseWriter, r *http.Request) {
+	stats := service.EmbedStats()
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// POST /api/v1/embed/batch?domain=X&limit=N
+func embedBatch(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	domain := q.Get("domain")
+	limit := parseIntDefault(q.Get("limit"), 500)
+
+	processed, errors := service.EmbedBatch(domain, limit)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"processed": processed,
+		"errors":    errors,
+	})
 }

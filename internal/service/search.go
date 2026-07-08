@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"math/rand"
 	"strings"
 
@@ -100,6 +101,20 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
+	}
+
+	// 向量搜索：有 query 且有 API key 时，并行距离搜索 + union
+	if params.Query != "" && !store.IsSQLite && embedAPIKey != "" {
+		vecResults, _ := vectorSearch(params.Query, params.Domain, params.Type, params.Limit)
+		if len(vecResults) > 0 {
+			// 投票：向量命中的加分，就是把向量结果在最后 merge
+			// 找到 trgm 找不到但向量能找到的加到结果中
+			q = q.Offset(params.Offset).Limit(params.Limit)
+			var trgmConcepts []model.Concept
+			_ = q.Find(&trgmConcepts).Error
+
+			return mergeResults(trgmConcepts, vecResults, params.Query, params.Tags, params.Limit), total, nil
+		}
 	}
 
 	// 排序
@@ -237,6 +252,68 @@ func matchReason(c model.Concept, query string, tags []string) string {
 
 func looksLikePath(q string) bool {
 	return len(q) >= 5 && strings.Count(q, "/") >= 2
+}
+
+// vectorSearch 用向量进行语义搜索（包括跨语言）
+func vectorSearch(query, domain, typ string, limit int) ([]model.Concept, error) {
+	vecs, err := embedText([]string{query})
+	if err != nil || len(vecs) == 0 {
+		return nil, err
+	}
+	vecStr := floatsToVecStr(vecs[0])
+
+	q := store.DB.Model(&model.Concept{}).
+		Where("embed_status = 'done'").
+		Where("embedding IS NOT NULL")
+	if domain != "" {
+		q = q.Where("domain = ?", domain)
+	}
+	if typ != "" {
+		q = q.Where("type = ?", typ)
+	}
+
+	var concepts []model.Concept
+	err = q.Order(fmt.Sprintf("embedding <=> '%s'::vector", vecStr)).
+		Limit(limit).
+		Find(&concepts).Error
+	return concepts, err
+}
+
+// mergeResults 合并 trgm 和向量结果，向量结果用 vector_match 标识
+func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags []string, limit int) []SearchResult {
+	seen := map[string]bool{}
+	results := []SearchResult{}
+
+	// trgm 结果优先
+	for _, c := range trgm {
+		if seen[c.ID] {
+			continue
+		}
+		seen[c.ID] = true
+		results = append(results, SearchResult{
+			ID: c.ID, Domain: c.Domain, Type: c.Type,
+			Title: c.Title, Description: c.Description,
+			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
+			MatchReason: matchReason(c, query, tags),
+		})
+	}
+	// 向量结果补凅（trgm 没命中的）
+	for _, c := range vec {
+		if seen[c.ID] {
+			continue
+		}
+		seen[c.ID] = true
+		results = append(results, SearchResult{
+			ID: c.ID, Domain: c.Domain, Type: c.Type,
+			Title: c.Title, Description: c.Description,
+			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
+			MatchReason: "vector_match",
+		})
+	}
+	if len(results) > limit {
+		return results[:limit]
+	}
+	return results
 }
 
 // ── 领域清单 ─────────────────────────────────────────────────

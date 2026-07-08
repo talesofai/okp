@@ -169,6 +169,7 @@ type Concept struct {
 	Resource    string      `gorm:"type:text" json:"resource,omitempty"`
 	Provenance  JSONMap     `gorm:"type:jsonb;not null" json:"provenance"`
 	ContentHash string      `gorm:"type:text" json:"content_hash,omitempty"`
+	EmbedStatus string      `gorm:"type:text;default:'pending'" json:"-"` // pending | done | failed
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 }

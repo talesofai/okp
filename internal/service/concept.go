@@ -164,6 +164,8 @@ func PutConcept(c *model.Concept) (*model.Concept, []ValidationError, error) {
 		return nil, nil, err
 	}
 	saveRevision(c, "create")
+	// 异步生成向量（非阻塞，失败不影响写入）
+	AsyncEmbed(c.ID)
 	return c, nil, nil
 }
 

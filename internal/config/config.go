@@ -18,9 +18,11 @@ type Config struct {
 	DomainTokens      map[string]string
 
 	// Cohub auth
-	LogtoEndpoint     string // Logto OIDC issuer, e.g. https://auth.neta.art
-	LogtoResource     string // Expected audience, default https://api.talesofai
-	ExecutionGrantKey string // HMAC key shared with cohub API for validating execution grants
+	LogtoEndpoint     string
+	LogtoResource     string
+	ExecutionGrantKey string
+	EmbedAPIKey       string // OpenAI-compatible embedding API key
+	EmbedAPIBase      string // embedding API base URL
 }
 
 func Load() {
@@ -36,6 +38,8 @@ func Load() {
 		LogtoEndpoint:     envDefault("LOGTO_ENDPOINT", envDefault("OKP_LOGTO_ENDPOINT", "https://auth.neta.art")),
 		LogtoResource:     envDefault("OKP_LOGTO_RESOURCE", "https://api.talesofai"),
 		ExecutionGrantKey: os.Getenv("OKP_EXECUTION_GRANT_KEY"),
+		EmbedAPIKey:       os.Getenv("OKP_EMBED_API_KEY"),
+		EmbedAPIBase:      envDefault("OKP_EMBED_API_BASE", "https://yunwu.ai/v1"),
 	}
 
 	// SQLite 模式不需要 DATABASE_URL

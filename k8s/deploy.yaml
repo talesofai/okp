@@ -27,13 +27,15 @@ spec:
         env:
         - name: OKP_API_PORT
           value: "8720"
-        - name: OKP_API_TOKEN
+        - name: OKP_LOG_LEVEL
+          value: "info"
+        - name: OKP_EMBED_API_BASE
+          value: "https://yunwu.ai/v1"
+        - name: OKP_EMBED_API_KEY
           valueFrom:
             secretKeyRef:
               name: okp-pg
-              key: OKP_API_TOKEN
-        - name: OKP_LOG_LEVEL
-          value: "info"
+              key: OKP_EMBED_API_KEY
         readinessProbe:
           httpGet:
             path: /api/v1/health

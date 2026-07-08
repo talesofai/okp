@@ -99,6 +99,17 @@ func Init() {
 		// 状态 + 领域索引：加速 domains 列表、领域统计查询
 		// frontmatter GIN 全列索引（支持所有 key 的 @> 包含查询）
 		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_frontmatter_gin ON concepts USING gin (frontmatter)`).Error
+
+		// pgvector 向量搜索
+		_ = DB.Exec(`CREATE EXTENSION IF NOT EXISTS vector`).Error
+		// 待有足够数据再建 HNSW 索引（首次迁移后手动运行）
+		_ = DB.Exec(`DO $ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+				WHERE table_name='concepts' AND column_name='embedding') THEN
+				ALTER TABLE concepts ADD COLUMN embedding vector(1536);
+				ALTER TABLE concepts ADD COLUMN embed_status text DEFAULT 'pending';
+			END IF;
+		END $`).Error
 	}
 
 	slog.Info("数据库迁移完成")
