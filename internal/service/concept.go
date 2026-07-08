@@ -6,6 +6,7 @@ import (
 
 	"github.com/talesofai/okp/internal/model"
 	"github.com/talesofai/okp/internal/store"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -276,4 +277,104 @@ func PutLinks(fromID string, linkPairs []struct {
 	}
 
 	return tx.Commit().Error
+}
+
+// ── Batch ────────────────────────────────────────────────────
+
+type BatchResult struct {
+	ID     string `json:"id"`
+	Status string `json:"status"` // "created" | "updated" | "skipped" | "error"
+	Error  string `json:"error,omitempty"`
+}
+
+// BatchPutConcepts 批量 upsert，事务内完成，跳过 revision 和去重校验以提升性能。
+func BatchPutConcepts(concepts []model.Concept) []BatchResult {
+	db := store.DB
+	results := make([]BatchResult, len(concepts))
+	if len(concepts) == 0 {
+		return results
+	}
+
+	// 收集所有 ID，一次查出已存在的
+	ids := make([]string, len(concepts))
+	for i := range concepts {
+		ids[i] = concepts[i].ID
+	}
+
+	var existing []model.Concept
+	db.Where("id IN ?", ids).Find(&existing)
+	existingMap := make(map[string]*model.Concept, len(existing))
+	for i := range existing {
+		existingMap[existing[i].ID] = &existing[i]
+	}
+
+	tx := db.Begin()
+	for i := range concepts {
+		c := &concepts[i]
+		c.ContentHash = c.ComputeHash()
+		if c.Tags == nil {
+			c.Tags = model.StringSlice{}
+		}
+		if c.Frontmatter == nil {
+			c.Frontmatter = make(model.JSONMap)
+		}
+		if c.Provenance == nil {
+			c.Provenance = make(model.JSONMap)
+		}
+
+		if prev, ok := existingMap[c.ID]; ok {
+			if prev.ContentHash == c.ContentHash {
+				results[i] = BatchResult{ID: c.ID, Status: "skipped"}
+				continue
+			}
+			c.CreatedAt = prev.CreatedAt
+			if err := tx.Save(c).Error; err != nil {
+				tx.Rollback()
+				// 事务失败则逐条 fallback
+				results[i] = BatchResult{ID: c.ID, Status: "error", Error: err.Error()}
+				for j := i + 1; j < len(concepts); j++ {
+					results[j] = putOne(db, &concepts[j])
+				}
+				return results
+			}
+			results[i] = BatchResult{ID: c.ID, Status: "updated"}
+		} else {
+			if err := tx.Create(c).Error; err != nil {
+				tx.Rollback()
+				results[i] = BatchResult{ID: c.ID, Status: "error", Error: err.Error()}
+				for j := i + 1; j < len(concepts); j++ {
+					results[j] = putOne(db, &concepts[j])
+				}
+				return results
+			}
+			results[i] = BatchResult{ID: c.ID, Status: "created"}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		// Commit 失败，回退逐条
+		for i := range concepts {
+			results[i] = putOne(db, &concepts[i])
+		}
+	}
+	return results
+}
+
+func putOne(db *gorm.DB, c *model.Concept) BatchResult {
+	c.ContentHash = c.ComputeHash()
+	var prev model.Concept
+	if err := db.First(&prev, "id = ?", c.ID).Error; err == nil {
+		if prev.ContentHash == c.ContentHash {
+			return BatchResult{ID: c.ID, Status: "skipped"}
+		}
+		c.CreatedAt = prev.CreatedAt
+		if err := db.Save(c).Error; err != nil {
+			return BatchResult{ID: c.ID, Status: "error", Error: err.Error()}
+		}
+		return BatchResult{ID: c.ID, Status: "updated"}
+	}
+	if err := db.Create(c).Error; err != nil {
+		return BatchResult{ID: c.ID, Status: "error", Error: err.Error()}
+	}
+	return BatchResult{ID: c.ID, Status: "created"}
 }

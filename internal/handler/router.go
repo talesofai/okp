@@ -111,28 +111,7 @@ func batchUpsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type batchResult struct {
-		ID     string `json:"id"`
-		Status string `json:"status"` // "created" | "updated" | "skipped" | "error"
-		Error  string `json:"error,omitempty"`
-	}
-	results := make([]batchResult, 0, len(concepts))
-
-	for _, c := range concepts {
-		result, validationErrs, err := service.PutConcept(&c)
-		br := batchResult{ID: c.ID}
-		if err != nil {
-			br.Status = "error"
-			br.Error = err.Error()
-		} else if len(validationErrs) > 0 {
-			br.Status = "error"
-			br.Error = "校验失败: " + validationErrs[0].Message
-		} else {
-			br.Status = "created"
-		}
-		_ = result
-		results = append(results, br)
-	}
+	results := service.BatchPutConcepts(concepts)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total":   len(concepts),
