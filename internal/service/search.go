@@ -1,11 +1,14 @@
 package service
 
 import (
+	"math/rand"
 	"strings"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/talesofai/okp/internal/model"
 	"github.com/talesofai/okp/internal/store"
-	"gorm.io/gorm/clause"
 )
 
 // SearchResult 搜索结果项
@@ -27,18 +30,14 @@ type SearchParams struct {
 	Type     string
 	Tags     []string
 	Scenario string
+	Filters  map[string]string // frontmatter 任意字段过滤，如 {"sender":"kjx","group":"feishu-worldbuild"}
+	Sort     string            // updated_at:desc(默认) | updated_at:asc | date:desc | date:asc | title:asc
 	Limit    int
 	Offset   int
 }
 
 // Search 执行概念搜索。
-//   - 路径式（含2个以上 /） → 精确 ID 或前缀
-//   - 多词查询（含空格）→ 拆词后每词 ILIKE AND
-//   - 单词/短语 → trgm 相似度 + ILIKE
-//   - 无 query → 结构过滤
 func Search(params SearchParams) ([]SearchResult, int64, error) {
-	db := store.DB
-
 	if params.Limit <= 0 {
 		params.Limit = 50
 	}
@@ -46,8 +45,9 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		params.Limit = 200
 	}
 
-	q := db.Model(&model.Concept{})
+	q := store.DB.Model(&model.Concept{})
 
+	// 结构过滤
 	if params.Domain != "" {
 		q = q.Where("domain = ?", params.Domain)
 	}
@@ -69,6 +69,13 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		q = q.Where("frontmatter->>'scenario' = ?", params.Scenario)
 	}
 
+	// frontmatter 任意字段过滤（走 GIN 索引的 @> containment）
+	if len(params.Filters) > 0 && !store.IsSQLite {
+		for k, v := range params.Filters {
+			q = q.Where("frontmatter @> jsonb_build_object(?, ?::text)", k, v)
+		}
+	}
+
 	// 文本查询
 	textSearch := false
 	if params.Query != "" {
@@ -81,8 +88,7 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		} else if looksLikePath(query) {
 			q = q.Where("id = ? OR id LIKE ?", query, query+"%")
 		} else {
-			words := splitQuery(query)
-			for _, w := range words {
+			for _, w := range splitQuery(query) {
 				like := "%" + w + "%"
 				q = q.Where("(title ILIKE ? OR description ILIKE ? OR similarity(title, ?) > 0.2)",
 					like, like, w)
@@ -96,22 +102,8 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		return nil, 0, err
 	}
 
-	if textSearch && !store.IsSQLite && params.Query != "" {
-		words := splitQuery(params.Query)
-		if len(words) == 1 {
-			q = q.Clauses(clause.OrderBy{
-				Expression: clause.Expr{
-					SQL:  "similarity(title, ?) DESC",
-					Vars: []interface{}{words[0]},
-				},
-			})
-		} else {
-			q = q.Order("updated_at DESC")
-		}
-	} else {
-		q = q.Order("updated_at DESC")
-	}
-
+	// 排序
+	q = applySort(q, params.Sort, textSearch, params.Query)
 	q = q.Offset(params.Offset).Limit(params.Limit)
 
 	var concepts []model.Concept
@@ -132,9 +124,95 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 			MatchReason: matchReason(c, params.Query, params.Tags),
 		}
 	}
-
 	return results, total, nil
 }
+
+// applySort 决定排序策略：
+//   - 有文本搜索且单词时用 trgm 相似度
+//   - sort 显式指定时按参数
+//   - 默认 updated_at DESC
+func applySort(q *gorm.DB, sort string, textSearch bool, query string) *gorm.DB {
+	// 文本搜索单词时按相似度排序（优先于 sort 参数）
+	if textSearch && !store.IsSQLite && query != "" {
+		words := splitQuery(query)
+		if len(words) == 1 {
+			return q.Clauses(clause.OrderBy{
+				Expression: clause.Expr{
+					SQL:  "similarity(title, ?) DESC",
+					Vars: []interface{}{words[0]},
+				},
+			})
+		}
+	}
+
+	switch sort {
+	case "updated_at:asc":
+		return q.Order("updated_at ASC")
+	case "date:desc":
+		// frontmatter->>'date' 是 YYYY-MM-DD，字母序 = 时间序
+		return q.Order("frontmatter->>'date' DESC NULLS LAST")
+	case "date:asc":
+		return q.Order("frontmatter->>'date' ASC NULLS LAST")
+	case "title:asc":
+		return q.Order("title ASC")
+	default:
+		return q.Order("updated_at DESC")
+	}
+}
+
+// Sample 随机采样 concepts
+func Sample(domain, typ string, limit int) ([]SearchResult, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	q := store.DB.Model(&model.Concept{})
+	if domain != "" {
+		q = q.Where("domain = ?", domain)
+	}
+	if typ != "" {
+		q = q.Where("type = ?", typ)
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, err
+	}
+	if total == 0 {
+		return []SearchResult{}, nil
+	}
+
+	// 随机 offset + ORDER BY RANDOM() 双保险
+	offset := 0
+	if total > int64(limit) {
+		offset = int(rand.Int63n(total - int64(limit)))
+	}
+
+	var concepts []model.Concept
+	if err := q.Order("RANDOM()").Offset(offset).Limit(limit).Find(&concepts).Error; err != nil {
+		return nil, err
+	}
+
+	results := make([]SearchResult, len(concepts))
+	for i, c := range concepts {
+		results[i] = SearchResult{
+			ID:          c.ID,
+			Domain:      c.Domain,
+			Type:        c.Type,
+			Title:       c.Title,
+			Description: c.Description,
+			Tags:        []string(c.Tags),
+			Frontmatter: c.Frontmatter,
+			MatchReason: "sample",
+		}
+	}
+	return results, nil
+}
+
+// ── 辅助函数 ─────────────────────────────────────────────────
 
 func splitQuery(q string) []string {
 	raw := strings.Fields(q)

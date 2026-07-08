@@ -1,6 +1,6 @@
 {
   "name": "@markbangwu/okp",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Open Knowledge Pool CLI — search, import, and manage knowledge concepts.",
   "license": "UNLICENSED",
   "bin": {
@@ -10,10 +10,10 @@
     "okp.js"
   ],
   "optionalDependencies": {
-    "okp-cli-linux-x64": "1.0.5",
-    "okp-cli-linux-arm64": "1.0.5",
-    "okp-cli-darwin-x64": "1.0.5",
-    "okp-cli-darwin-arm64": "1.0.5"
+    "okp-cli-linux-x64": "1.0.6",
+    "okp-cli-linux-arm64": "1.0.6",
+    "okp-cli-darwin-x64": "1.0.6",
+    "okp-cli-darwin-arm64": "1.0.6"
   },
   "publishConfig": {
     "access": "public"

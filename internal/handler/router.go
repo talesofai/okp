@@ -40,6 +40,7 @@ func NewRouter() http.Handler {
 	// concepts 用 catch-all /* 捕获含 / 的多段 ID
 	r.Post("/api/v1/concepts:batch", batchUpsert)
 	r.Get("/api/v1/concepts", listConcepts)
+	r.Get("/api/v1/concepts/sample", sampleConcepts)
 	r.Put("/api/v1/concepts/*", upsertConcept)
 	r.Get("/api/v1/concepts/*", getConcept)
 
@@ -124,12 +125,24 @@ func batchUpsert(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/concepts
 func listConcepts(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+
+	// frontmatter filters: ?fm[sender]=kjx&fm[group]=feishu-worldbuild
+	filters := map[string]string{}
+	for key, vals := range q {
+		if strings.HasPrefix(key, "fm[") && strings.HasSuffix(key, "]") && len(vals) > 0 {
+			field := key[3 : len(key)-1]
+			filters[field] = vals[0]
+		}
+	}
+
 	params := service.SearchParams{
 		Query:    q.Get("q"),
 		Domain:   q.Get("domain"),
 		Type:     q.Get("type"),
-		Tags:     q["tag"], // 支持 ?tag=a&tag=b
+		Tags:     q["tag"],
 		Scenario: q.Get("scenario"),
+		Filters:  filters,
+		Sort:     q.Get("sort"),
 		Limit:    parseIntDefault(q.Get("limit"), 50),
 		Offset:   parseIntDefault(q.Get("offset"), 0),
 	}
@@ -344,4 +357,17 @@ func putDomainMeta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, meta)
+}
+
+// GET /api/v1/concepts/sample
+func sampleConcepts(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit := parseIntDefault(q.Get("limit"), 5)
+	results, err := service.Sample(q.Get("domain"), q.Get("type"), limit)
+	if err != nil {
+		slog.Error("采样失败", "error", err)
+		writeError(w, http.StatusInternalServerError, "采样失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, results)
 }

@@ -142,8 +142,8 @@ func cmdGet() *cobra.Command {
 }
 
 func cmdSearch() *cobra.Command {
-	var domain, typeFilter, scenario string
-	var tags []string
+	var domain, typeFilter, scenario, sort string
+	var tags, filters []string
 	var limit, offset int
 
 	cmd := &cobra.Command{
@@ -164,8 +164,18 @@ func cmdSearch() *cobra.Command {
 			if scenario != "" {
 				params.Set("scenario", scenario)
 			}
+			if sort != "" {
+				params.Set("sort", sort)
+			}
 			for _, t := range tags {
 				params.Add("tag", t)
+			}
+			// --filter sender=kjx → fm[sender]=kjx
+			for _, f := range filters {
+				parts := strings.SplitN(f, "=", 2)
+				if len(parts) == 2 {
+					params.Set("fm["+parts[0]+"]", parts[1])
+				}
 			}
 			params.Set("limit", fmt.Sprintf("%d", limit))
 			params.Set("offset", fmt.Sprintf("%d", offset))
@@ -176,11 +186,10 @@ func cmdSearch() *cobra.Command {
 			}
 			var results []map[string]any
 			if err := readJSON(resp, &results); err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(os.Stderr, err)
 				return nil
 			}
-			// 结果数输出到 stderr，保持 stdout 纯 JSON（方便管道）
-			fmt.Fprintf(os.Stderr, "共 %s 条结果\n", resp.Header.Get("X-Total-Count"))
+			fmt.Fprintf(os.Stderr, "共 %d 条结果\n", len(results))
 			prettyPrint(results)
 			return nil
 		},
@@ -188,7 +197,9 @@ func cmdSearch() *cobra.Command {
 	cmd.Flags().StringVarP(&domain, "domain", "d", "", "限定领域")
 	cmd.Flags().StringVarP(&typeFilter, "type", "t", "", "限定类型")
 	cmd.Flags().StringVar(&scenario, "scenario", "", "限定场景 (frontmatter.scenario)")
+	cmd.Flags().StringVar(&sort, "sort", "", "排序: updated_at:desc|asc, date:desc|asc, title:asc")
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "限定标签（可重复）")
+	cmd.Flags().StringArrayVar(&filters, "filter", nil, "frontmatter 字段过滤，如 --filter sender=kjx --filter group=feishu-worldbuild")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "返回数量上限")
 	cmd.Flags().IntVar(&offset, "offset", 0, "分页偏移")
 	return cmd
@@ -401,5 +412,40 @@ func cmdDomain() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&setFile, "set", "", "从 markdown 文件更新 README")
+	return cmd
+}
+
+func cmdSample() *cobra.Command {
+	var domain, typeFilter string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "sample",
+		Short: "随机采样 concept，适合探索未知 domain 的数据结构",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			params := url.Values{}
+			if domain != "" {
+				params.Set("domain", domain)
+			}
+			if typeFilter != "" {
+				params.Set("type", typeFilter)
+			}
+			params.Set("limit", fmt.Sprintf("%d", limit))
+			resp, err := doRequest("GET", "/api/v1/concepts/sample?"+params.Encode(), nil)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var results []map[string]any
+			if err := readJSON(resp, &results); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return nil
+			}
+			fmt.Fprintf(os.Stderr, "采样 %d 条\n", len(results))
+			prettyPrint(results)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&domain, "domain", "d", "", "限定领域")
+	cmd.Flags().StringVarP(&typeFilter, "type", "t", "", "限定类型")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 5, "采样数量")
 	return cmd
 }
