@@ -1,7 +1,7 @@
 ---
 name: okp-import
 version: 1.0.0
-description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领域 owner 的 agent：读原始数据 → 查重 → 按模板蒸馏 → 本地校验 → 写入（默认 draft）。领域 owner 不碰数据库——只通过本 skill 操作。"
+description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领域 owner 的 agent：读原始数据 → 查重 → 按模板蒸馏 → 本地校验 → 写入。领域 owner 不碰数据库——只通过本 skill 操作。"
 metadata:
   requires:
     bins: ["okp"]
@@ -172,7 +172,6 @@ NDJSON 格式（每行一个完整 concept JSON）：
 ## 注意事项
 
 - **幂等安全**：重复导入同一 concept（内容未变）自动 skip，不会产生重复数据。
-- **accepted → 内容变更 → 降级**：如果概念已 accepted，内容变化后自动降为 draft 并标记 `needs_review`。
 - **原始数据不进池**：只导入蒸馏后的 concept，不要把原始 wiki 页面全文当 concept body。
 - **图像走 R2 URI**：concept 的 `resource` 字段存图像 R2 URI，不存 base64。
 

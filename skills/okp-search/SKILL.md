@@ -126,7 +126,7 @@ okp search --domain fandom --type Character --limit 20  # 查所有角色
 | `title` | 人类可读标题 |
 | `description` | 一句话摘要（卡片目录） |
 | `match_reason` | 为什么匹配（agent 据此判断置信度） |
-| `status` | 默认只返回 `accepted` |
+| `status` | 概念状态（draft / accepted） |
 
 **完整内容通过 `okp get <id>` 获取，即使已经出现在搜索结果中也必须重新 get。**
 
