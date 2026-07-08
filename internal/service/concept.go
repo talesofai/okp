@@ -241,14 +241,23 @@ func saveRevision(c *model.Concept, action string) {
 // ── Links ────────────────────────────────────────────────────
 
 // GetLinks 获取 concept 的出链和反向引用。
-func GetLinks(id string) (outgoing []model.Link, backlinks []model.Link, err error) {
-	if err := store.DB.Where("from_id = ?", id).Find(&outgoing).Error; err != nil {
-		return nil, nil, err
+// GetLinks 获取 concept 的出链和反向引用，支持分页。
+func GetLinks(id string, limit, offset int) (outgoing []model.Link, backlinks []model.Link, totalOut int64, totalBack int64, err error) {
+	if limit <= 0 {
+		limit = 50
 	}
-	if err := store.DB.Where("to_id = ?", id).Find(&backlinks).Error; err != nil {
-		return nil, nil, err
+	if limit > 200 {
+		limit = 200
 	}
-	return outgoing, backlinks, nil
+
+	db := store.DB.Model(&model.Link{})
+	if err := db.Where("from_id = ?", id).Count(&totalOut).Limit(limit).Offset(offset).Find(&outgoing).Error; err != nil {
+		return nil, nil, 0, 0, err
+	}
+	if err := db.Where("to_id = ?", id).Count(&totalBack).Limit(limit).Offset(offset).Find(&backlinks).Error; err != nil {
+		return nil, nil, 0, 0, err
+	}
+	return outgoing, backlinks, totalOut, totalBack, nil
 }
 
 // PutLinks 全量替换 concept 的出链（先删后插）。

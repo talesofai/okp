@@ -182,13 +182,39 @@ type DomainInfo struct {
 	ConceptCount int64 `json:"concept_count"`
 }
 
-// ListDomains 列出所有 domain 及其 concept 数量
-func ListDomains() ([]DomainInfo, error) {
+// ListDomains 列出所有 domain 及其 concept 数量，支持搜索和分页。
+func ListDomains(q string, limit, offset int) ([]DomainInfo, int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	db := store.DB.Model(&model.Concept{})
+	if q != "" {
+		db = db.Where("domain ILIKE ?", "%"+q+"%")
+	}
+
+	var total int64
+	// 子查询：每个 domain 一条
+	subQuery := store.DB.Model(&model.Concept{}).
+		Select("domain").
+		Group("domain")
+	if q != "" {
+		subQuery = subQuery.Where("domain ILIKE ?", "%"+q+"%")
+	}
+	if err := subQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
 	var domains []DomainInfo
-	err := store.DB.Model(&model.Concept{}).
+	err := db.
 		Select("domain, count(*) as concept_count").
 		Group("domain").
 		Order("concept_count DESC").
+		Limit(limit).
+		Offset(offset).
 		Scan(&domains).Error
-	return domains, err
+	return domains, total, err
 }

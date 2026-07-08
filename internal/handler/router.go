@@ -201,12 +201,18 @@ func getConcept(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/concepts/{id}/links
 func getConceptLinks(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "*")
-	outgoing, backlinks, err := service.GetLinks(id)
+	q := r.URL.Query()
+	limit := parseIntDefault(q.Get("limit"), 50)
+	offset := parseIntDefault(q.Get("offset"), 0)
+
+	outgoing, backlinks, totalOut, totalBack, err := service.GetLinks(id, limit, offset)
 	if err != nil {
 		slog.Error("获取链接失败", "error", err)
 		writeError(w, http.StatusInternalServerError, "获取链接失败")
 		return
 	}
+	w.Header().Set("X-Total-Outgoing", itoa(totalOut))
+	w.Header().Set("X-Total-Backlinks", itoa(totalBack))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"concept_id": id,
 		"outgoing":   outgoing,
@@ -239,12 +245,17 @@ func putConceptLinks(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/domains
 func listDomains(w http.ResponseWriter, r *http.Request) {
-	domains, err := service.ListDomains()
+	q := r.URL.Query()
+	limit := parseIntDefault(q.Get("limit"), 50)
+	offset := parseIntDefault(q.Get("offset"), 0)
+
+	domains, total, err := service.ListDomains(q.Get("q"), limit, offset)
 	if err != nil {
 		slog.Error("获取领域列表失败", "error", err)
 		writeError(w, http.StatusInternalServerError, "获取领域列表失败")
 		return
 	}
+	w.Header().Set("X-Total-Count", itoa(total))
 	writeJSON(w, http.StatusOK, domains)
 }
 
