@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lestrrat-go/httprc/v3"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"gorm.io/gorm/clause"
@@ -125,43 +124,35 @@ func validateExecutionGrant(token string, key string) (actorUserID string, ok bo
 // ── Logto JWT validation ────────────────────────────────────
 
 var (
-	jwksMu       sync.Mutex
-	jwksCache    *jwk.Cache
-	jwksEndpoint string
+	jwksMu        sync.Mutex
+	jwksCachedSet jwk.Set
+	jwksEndpoint  string
+	jwksExpiry    time.Time
 )
 
 func getJWKS(ctx context.Context, logtoEndpoint string) (jwk.Set, error) {
 	jwksMu.Lock()
 	defer jwksMu.Unlock()
 
-	if jwksCache != nil && jwksEndpoint == logtoEndpoint {
-		return jwksCache.Lookup(ctx, logtoEndpoint+"/oidc/jwks")
+	jwksURL := logtoEndpoint + "/oidc/jwks"
+
+	// 缓存命中（1 小时内有效）
+	if jwksCachedSet != nil && jwksEndpoint == logtoEndpoint && time.Now().Before(jwksExpiry) {
+		return jwksCachedSet, nil
 	}
 
-	// 用带超时的 HTTP client
-	httpClient := httprc.NewClient(
-		httprc.WithHTTPClient(&http.Client{Timeout: 15 * time.Second}),
-	)
-
-	cache, err := jwk.NewCache(ctx, httpClient)
+	// 直接 Fetch
+	set, err := jwk.Fetch(ctx, jwksURL)
 	if err != nil {
-		return nil, err
-	}
-	if err := cache.Register(ctx, logtoEndpoint+"/oidc/jwks"); err != nil {
-		return nil, err
-	}
-	// 首次刷新，加超时
-	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	if _, err := cache.Refresh(fetchCtx, logtoEndpoint+"/oidc/jwks"); err != nil {
-		slog.Error("JWKS 首次获取失败", "endpoint", logtoEndpoint+"/oidc/jwks", "error", err)
+		slog.Error("JWKS 获取失败", "endpoint", jwksURL, "error", err)
 		return nil, err
 	}
 
-	jwksCache = cache
+	slog.Info("JWKS 获取成功", "endpoint", jwksURL, "keys", set.Len())
+	jwksCachedSet = set
 	jwksEndpoint = logtoEndpoint
-	slog.Info("JWKS 缓存初始化成功", "endpoint", logtoEndpoint)
-	return cache.Lookup(ctx, logtoEndpoint+"/oidc/jwks")
+	jwksExpiry = time.Now().Add(1 * time.Hour)
+	return set, nil
 }
 
 func validateLogtoToken(ctx context.Context, tokenStr string, logtoEndpoint, resource string) (userUUID string, ok bool) {
