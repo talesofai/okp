@@ -14,7 +14,7 @@ metadata:
 
 ```bash
 # 安装
-npm install -g @markbangwu/okp
+npm install -g @markbangwu/okp-cli
 
 okp domains   # 确认 API 可达，查看可用的知识领域
 ```
