@@ -11,7 +11,11 @@ metadata:
 # okp-import — 知识导入 Skill
 
 **CRITICAL — 开始前 MUST 确认 okp CLI 已安装并可连接 API：**
+
 ```bash
+# 安装
+npm install -g okp-cli
+
 okp domains    # 确认 API 可达
 ```
 

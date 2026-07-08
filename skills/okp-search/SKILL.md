@@ -11,7 +11,11 @@ metadata:
 # okp-search — 知识搜索 Skill
 
 **CRITICAL — 开始前 MUST 确认 okp CLI 已安装并可连接 API：**
+
 ```bash
+# 安装
+npm install -g okp-cli
+
 okp domains   # 确认 API 可达，查看可用的知识领域
 ```
 
