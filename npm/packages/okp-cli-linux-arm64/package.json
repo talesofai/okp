@@ -1,0 +1,10 @@
+{
+  "name": "okp-cli-linux-arm64",
+  "version": "1.0.3",
+  "description": "okp CLI binary for linux arm64",
+  "license": "UNLICENSED",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "files": ["vendor"],
+  "publishConfig": {"access": "public"}
+}

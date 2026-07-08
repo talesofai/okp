@@ -1,0 +1,10 @@
+{
+  "name": "okp-cli-darwin-arm64",
+  "version": "1.0.3",
+  "description": "okp CLI binary for darwin arm64",
+  "license": "UNLICENSED",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["vendor"],
+  "publishConfig": {"access": "public"}
+}
