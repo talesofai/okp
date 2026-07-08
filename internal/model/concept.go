@@ -159,15 +159,14 @@ func parsePGArray(raw string) []string {
 // ID 路径式：'fandom/genshin-impact/characters/klee'
 type Concept struct {
 	ID          string      `gorm:"primaryKey;type:text" json:"id"`
-	Domain      string      `gorm:"type:text;not null;index:idx_domain_type_status,priority:1" json:"domain"`
-	Type        string      `gorm:"type:text;not null;index:idx_domain_type_status,priority:2" json:"type"`
+	Domain      string      `gorm:"type:text;not null;index:idx_domain_type,priority:1" json:"domain"`
+	Type        string      `gorm:"type:text;not null;index:idx_domain_type,priority:2" json:"type"`
 	Title       string      `gorm:"type:text" json:"title,omitempty"`
 	Description string      `gorm:"type:text" json:"description,omitempty"`
 	Tags        StringSlice `gorm:"type:text[];default:'{}'" json:"tags,omitempty"`
 	Frontmatter JSONMap     `gorm:"type:jsonb;default:'{}'" json:"frontmatter,omitempty"`
 	Body        string      `gorm:"type:text" json:"body,omitempty"`
 	Resource    string      `gorm:"type:text" json:"resource,omitempty"`
-	Status      string      `gorm:"type:text;default:'draft';index:idx_domain_type_status,priority:3" json:"status"`
 	Provenance  JSONMap     `gorm:"type:jsonb;not null" json:"provenance"`
 	ContentHash string      `gorm:"type:text" json:"content_hash,omitempty"`
 	CreatedAt   time.Time   `json:"created_at"`
@@ -188,9 +187,6 @@ func (c *Concept) ComputeHash() string {
 
 // BeforeCreate GORM hook: 自动计算 content_hash 和填充默认值
 func (c *Concept) BeforeCreate(tx *gorm.DB) error {
-	if c.Status == "" {
-		c.Status = "draft"
-	}
 	if c.Tags == nil {
 		c.Tags = StringSlice{}
 	}

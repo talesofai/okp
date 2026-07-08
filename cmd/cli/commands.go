@@ -141,7 +141,7 @@ func cmdGet() *cobra.Command {
 }
 
 func cmdSearch() *cobra.Command {
-	var domain, typeFilter, status, scenario string
+	var domain, typeFilter, scenario string
 	var tags []string
 	var limit, offset int
 
@@ -159,9 +159,6 @@ func cmdSearch() *cobra.Command {
 			}
 			if typeFilter != "" {
 				path += "type=" + typeFilter + "&"
-			}
-			if status != "" {
-				path += "status=" + status + "&"
 			}
 			if scenario != "" {
 				path += "scenario=" + scenario + "&"
@@ -187,7 +184,6 @@ func cmdSearch() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&domain, "domain", "d", "", "限定领域")
 	cmd.Flags().StringVarP(&typeFilter, "type", "t", "", "限定类型")
-	cmd.Flags().StringVar(&status, "status", "", "限定状态")
 	cmd.Flags().StringVar(&scenario, "scenario", "", "限定场景 (frontmatter.scenario)")
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "限定标签（可重复）")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "返回数量上限")

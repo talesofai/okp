@@ -14,7 +14,6 @@ type SearchResult struct {
 	Title       string   `json:"title,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
-	Status      string   `json:"status"`
 	MatchReason string   `json:"match_reason"` // "id_exact" | "title_trgm" | "description_like" | "tag_match"
 }
 
@@ -24,7 +23,6 @@ type SearchParams struct {
 	Domain   string   // 限定 domain
 	Type     string   // 限定 type
 	Tags     []string // 限定 tags（AND）
-	Status   string   // 限定 status（空 = 不过滤）
 	Scenario string   // frontmatter 内的 scenario 字段
 	Limit    int      // 默认 50
 	Offset   int
@@ -44,9 +42,6 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	if params.Limit > 200 {
 		params.Limit = 200
 	}
-	if params.Status == "" {
-		// 默认不过滤 status，所有 status 都能搜到
-	}
 
 	q := db.Model(&model.Concept{})
 
@@ -56,10 +51,6 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	}
 	if params.Type != "" {
 		q = q.Where("type = ?", params.Type)
-	}
-	// Status 过滤（空 = 不过滤）
-	if params.Status != "" {
-		q = q.Where("status = ?", params.Status)
 	}
 	if len(params.Tags) > 0 {
 		if store.IsSQLite {
@@ -135,7 +126,6 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 			Title:       c.Title,
 			Description: c.Description,
 			Tags:        []string(c.Tags),
-			Status:      c.Status,
 			MatchReason: matchReason(c, params.Query, params.Tags),
 		}
 	}

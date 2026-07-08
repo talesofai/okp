@@ -222,7 +222,6 @@ func saveRevision(c *model.Concept, action string) {
 			"frontmatter": c.Frontmatter,
 			"body":        c.Body,
 			"resource":    c.Resource,
-			"status":      c.Status,
 			"provenance":  c.Provenance,
 			"action":      action,
 		},

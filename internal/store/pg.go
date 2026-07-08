@@ -59,7 +59,7 @@ func Init() {
 
 	slog.Info("数据库已连接")
 
-	// 自动迁移
+	// 自动迁移 + 清理废弃字段
 	if err := DB.AutoMigrate(
 		&model.Concept{},
 		&model.Link{},
@@ -70,9 +70,16 @@ func Init() {
 		panic(err)
 	}
 
+	// 移除 status 列（废弃）
+	if DB.Migrator().HasColumn(&model.Concept{}, "status") {
+		if err := DB.Migrator().DropColumn(&model.Concept{}, "status"); err != nil {
+			slog.Warn("删除 status 列失败", "error", err)
+		}
+	}
+
 	if IsSQLite {
 		// SQLite: 创建基础索引
-		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_concepts_domain_type_status ON concepts (domain, type, status)").Error
+		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_concepts_domain_type ON concepts (domain, type)").Error
 		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_concepts_title ON concepts (title)").Error
 		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_links_from ON links (from_id)").Error
 		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_links_to ON links (to_id)").Error
@@ -86,10 +93,9 @@ func Init() {
 		// pg_trgm trigram 索引：对中文按字符三元组工作，支持相似度搜索和 ILIKE
 		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_title_trgm ON concepts USING gin (title gin_trgm_ops)`).Error
 		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_tags_gin ON concepts USING gin (tags)`).Error
-		// 复合索引：domain + type + status（领域过滤查询优化）
-		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_domain_type_status ON concepts (domain, type, status)`).Error
+		// 复合索引：domain + type（领域过滤查询优化）
+		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_domain_type ON concepts (domain, type)`).Error
 		// 状态 + 领域索引：加速 domains 列表、领域统计查询
-		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_status_domain ON concepts (status, domain)`).Error
 		// 中文全文搜索：正文 ILIKE 加速（pg_trgm 已支持非字母语言）
 		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_description_trgm ON concepts USING gin (description gin_trgm_ops)`).Error
 	}
