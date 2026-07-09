@@ -21,7 +21,7 @@ type SearchResult struct {
 	Description string        `json:"description,omitempty"`
 	Tags        []string      `json:"tags,omitempty"`
 	Frontmatter model.JSONMap `json:"frontmatter,omitempty"`
-	MatchReason string        `json:"match_reason"`
+	MatchReason string        `json:"-"` // 内部使用，不暴露给用户
 }
 
 // SearchParams 搜索参数
