@@ -73,7 +73,7 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	// frontmatter 任意字段过滤（走 GIN 索引的 @> containment）
 	if len(params.Filters) > 0 && !store.IsSQLite {
 		for k, v := range params.Filters {
-			q = q.Where("frontmatter @> jsonb_build_object(?, ?::text)", k, v)
+			q = q.Where("frontmatter->>? = ?", k, v)
 		}
 	}
 
