@@ -78,8 +78,8 @@ okp search "水墨 留白" --domain artist-styles     # 跨语言、同义词都
 
 **搜索是语义向量 + 字符匹配的 hybrid：**
 - 向量覆盖 title + type + tags + description + frontmatter 全部内容
-- 向量命中优先（语义最准），字符精确匹配补充
-- 支持跨语言（“雷神” ≈ Raiden）、同义词、模糊描述
+- **字符精确命中优先**，语义向量补充（跨语言、同义词、模糊描述）
+- 找某人/某组发的内容，用 `--filter sender=X` 比全文搜索更精确
 
 **写查询的要领：**
 - 用语义描述而非孤立关键词：`"pyro polearm character"` 比 `"hutao"` 更准
