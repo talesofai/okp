@@ -1,6 +1,6 @@
 ---
 name: okp-search
-version: 1.2.0
+version: 1.3.0
 description: "在 Open Knowledge Pool 中搜索和导航知识。面向消费 agent：filters 收窄 → light list → 精读少数 → 沿 links 导航。"
 metadata:
   requires:
@@ -28,9 +28,12 @@ okp domains   # 确认 API 可达，查看可用的知识领域
 ### Step 1: 确定搜索范围
 
 ```bash
-okp domains    # 列出所有领域及数量
-okp domain <domain>   # 读该 domain 的 README（含 frontmatter schema 定义）
+okp domains              # 列出所有领域及数量
+okp domains -q feishu    # 模糊搜索领域名（trgm）
+okp domain <domain>      # 读该 domain 的 README（含 frontmatter schema 定义）
 ```
+
+`okp domains` 返回字段：`domain`、`concept_count`、`has_readme`。`concept_count=0` 表示该 domain 已定义 README 但还没有 concept。
 
 ### Step 2: 不熟悉 domain 时先 sample
 
@@ -65,20 +68,23 @@ okp search --domain tech-monitor --sort date:desc --limit 10
 
 **`--filter` 的字段名来自 domain README 的 schema 定义，先用 `okp domain <domain>` 查阅。**
 
-### Step 5: 文本搜索
+### Step 5: 语义搜索（主力）
 
 ```bash
-okp search "可莉" --domain fandom
-okp search "水墨 留白" --domain artist-styles   # 多词自动拆分，每词 ILIKE AND
-okp search "emilkowalski/skills"               # 含 / 的字符串按文本处理
+okp search "hu tao" --domain fandom          # 语义向量搜索，命中 Hu Tao
+okp search "Raiden Shogun" --domain fandom   # 独特名称命中率最高
+okp search "水墨 留白" --domain artist-styles     # 跨语言、同义词都能命中
 ```
 
-**`match_reason` 字段含义**：
-- `id_exact` — 精确 ID 匹配
-- `text_match` — 标题/描述命中
-- `tag_match` — 标签匹配
-- `filter_match` — 仅结构过滤命中
-- `sample` — 随机采样结果
+**搜索是语义向量 + 字符匹配的 hybrid：**
+- 向量覆盖 title + type + tags + description + frontmatter 全部内容
+- 向量命中优先（语义最准），字符精确匹配补充
+- 支持跨语言（“雷神” ≈ Raiden）、同义词、模糊描述
+
+**写查询的要领：**
+- 用语义描述而非孤立关键词：`"pyro polearm character"` 比 `"hutao"` 更准
+- 名称越独特越准（`"Raiden Shogun"` 好于 `"raiden"`）
+- 找某人/某组发的内容，用 `--filter sender=X` 比全文搜索更精确
 
 ### Step 6: Light list → 精读
 
@@ -122,7 +128,6 @@ okp links feishu-social/Link/太离谱了居然可以在自己画的虚拟世界
 | `title` / `description` | 标题和摘要 |
 | `tags` | 标签列表 |
 | `frontmatter` | 扩展字段（sender、group、date 等，按 domain 不同）|
-| `match_reason` | 匹配原因 |
 
 **完整正文通过 `okp get <id>` 获取。**
 

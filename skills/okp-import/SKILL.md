@@ -1,6 +1,6 @@
 ---
 name: okp-import
-version: 1.2.0
+version: 1.3.0
 description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领域 owner 的 agent：读 domain README → 查重 → 蒸馏 → 校验 → 写入。"
 metadata:
   requires:
@@ -26,9 +26,10 @@ okp domains    # 确认 API 可达
 ```bash
 okp domain <domain>          # 打印 README（含 schema 定义）
 okp domains                  # 查看所有 domain
+okp domains -q <keyword>     # 模糊搜索领域名
 ```
 
-如果是新 domain，先写 README 再导入：
+如果是新 domain，先写 README 再导入（写 README 即定义 domain，之后 `okp domains` 立即可见）：
 
 ```bash
 okp domain <domain> --set readme.md
@@ -71,7 +72,7 @@ fields:
 okp search "<title>" --domain <domain> --type <type>
 ```
 
-- 命中 `text_match` → 判断是否同一概念 → 是则用已有 id 更新，否则改 title 区分
+- 命中语义相近的结果 → 判断是否同一概念 → 是则用已有 id 更新，否则改 title 区分
 
 ### Step 3: 蒸馏 concept JSON
 
