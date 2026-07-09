@@ -17,8 +17,8 @@ import (
 
 const (
 	embedModel     = "text-embedding-3-large"
-	embedDim       = 3072
-	embedBatchSize = 50 // large 模型每批50条（体积更大）
+	embedDim       = 1536 // large 模型分析降维1536，质量仍优于 small
+	embedBatchSize = 50
 )
 
 var (
@@ -40,8 +40,9 @@ func embedText(texts []string) ([][]float32, error) {
 	}
 
 	type reqBody struct {
-		Model string   `json:"model"`
-		Input []string `json:"input"`
+		Model      string   `json:"model"`
+		Input      []string `json:"input"`
+		Dimensions int      `json:"dimensions,omitempty"`
 	}
 	type embeddingObj struct {
 		Embedding []float32 `json:"embedding"`
@@ -50,7 +51,7 @@ func embedText(texts []string) ([][]float32, error) {
 		Data []embeddingObj `json:"data"`
 	}
 
-	body, _ := json.Marshal(reqBody{Model: embedModel, Input: texts})
+	body, _ := json.Marshal(reqBody{Model: embedModel, Input: texts, Dimensions: embedDim})
 
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
