@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	embedModel     = "text-embedding-3-small"
-	embedDim       = 1536
-	embedBatchSize = 100 // 每批最多100条
+	embedModel     = "text-embedding-3-large"
+	embedDim       = 3072
+	embedBatchSize = 50 // large 模型每批50条（体积更大）
 )
 
 var (
