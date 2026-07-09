@@ -103,17 +103,17 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		return nil, 0, err
 	}
 
-	// 向量搜索：有 query 且有 API key 时，并行距离搜索 + union
+	// 向量搜索：有 query 且有 API key 时，并行进行
 	if params.Query != "" && !store.IsSQLite && embedAPIKey != "" {
 		vecResults, _ := vectorSearch(params.Query, params.Domain, params.Type, params.Limit)
 		if len(vecResults) > 0 {
-			// 投票：向量命中的加分，就是把向量结果在最后 merge
-			// 找到 trgm 找不到但向量能找到的加到结果中
 			q = q.Offset(params.Offset).Limit(params.Limit)
 			var trgmConcepts []model.Concept
 			_ = q.Find(&trgmConcepts).Error
 
-			return mergeResults(trgmConcepts, vecResults, params.Query, params.Tags, params.Limit), total, nil
+			merged := mergeResults(trgmConcepts, vecResults, params.Query, params.Tags, params.Limit)
+			// count 用实际合并结果数，不用 trgm COUNT
+			return merged, int64(len(merged)), nil
 		}
 	}
 
@@ -280,25 +280,12 @@ func vectorSearch(query, domain, typ string, limit int) ([]model.Concept, error)
 }
 
 // mergeResults 合并 trgm 和向量结果
-// 向量结果优先（语义最准），trgm 补充精确匹配的项目
+// trgm 有精确匹配时优先（字符级命中），vector 补充语义相关内容
 func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags []string, limit int) []SearchResult {
 	seen := map[string]bool{}
 	results := []SearchResult{}
 
-	// 向量结果优先（语义搜索，包含跨语言）
-	for _, c := range vec {
-		if seen[c.ID] {
-			continue
-		}
-		seen[c.ID] = true
-		results = append(results, SearchResult{
-			ID: c.ID, Domain: c.Domain, Type: c.Type,
-			Title: c.Title, Description: c.Description,
-			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
-			MatchReason: "text_match",
-		})
-	}
-	// trgm 结果补充（向量没命中的精确匹配）
+	// trgm 精确匹配优先
 	for _, c := range trgm {
 		if seen[c.ID] {
 			continue
@@ -308,7 +295,18 @@ func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags 
 			ID: c.ID, Domain: c.Domain, Type: c.Type,
 			Title: c.Title, Description: c.Description,
 			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
-			MatchReason: matchReason(c, query, tags),
+		})
+	}
+	// vector 补充（trgm 没命中的语义相关）
+	for _, c := range vec {
+		if seen[c.ID] {
+			continue
+		}
+		seen[c.ID] = true
+		results = append(results, SearchResult{
+			ID: c.ID, Domain: c.Domain, Type: c.Type,
+			Title: c.Title, Description: c.Description,
+			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
 		})
 	}
 	if len(results) > limit {

@@ -96,20 +96,23 @@ func embedText(texts []string) ([][]float32, error) {
 }
 
 // conceptEmbedText 生成 concept 用于 embedding 的文本
-// 包含 title + type + tags + description，让向量覆盖元数据和内容
+// 包含所有内容： title + type + tags + description + frontmatter 全部字段
 func conceptEmbedText(c *model.Concept) string {
 	parts := []string{c.Title}
-	// 加入 type 和 domain（如 Character, fandom）
 	if c.Type != "" {
 		parts = append(parts, c.Type)
 	}
-	// 加入 tags（如 genshin-impact, pyro, polearm）
 	if len(c.Tags) > 0 {
 		parts = append(parts, strings.Join([]string(c.Tags), " "))
 	}
-	// 加入 description
 	if c.Description != "" {
 		parts = append(parts, c.Description)
+	}
+	// frontmatter 所有字段的值（sender, group, platform 等）
+	for _, v := range c.Frontmatter {
+		if s, ok := v.(string); ok && s != "" {
+			parts = append(parts, s)
+		}
 	}
 	return strings.Join(parts, " — ")
 }
