@@ -336,11 +336,13 @@ func cmdDomains() *cobra.Command {
 		Short: "列出所有知识领域",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := fmt.Sprintf("/api/v1/domains?limit=%d&offset=%d", limit, offset)
+			params := url.Values{}
+			params.Set("limit", fmt.Sprintf("%d", limit))
+			params.Set("offset", fmt.Sprintf("%d", offset))
 			if query != "" {
-				path += "&q=" + query
+				params.Set("q", query)
 			}
-			resp, err := doRequest("GET", path, nil)
+			resp, err := doRequest("GET", "/api/v1/domains?"+params.Encode(), nil)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}

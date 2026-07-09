@@ -216,9 +216,10 @@ func putConceptLinks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GET /api/v1/domains
+// GET /api/v1/domains?q=
 func listDomains(w http.ResponseWriter, r *http.Request) {
-	domains, err := service.ListDomains()
+	q := r.URL.Query().Get("q")
+	domains, err := service.ListDomains(q)
 	if err != nil {
 		slog.Error("获取领域列表失败", "error", err)
 		writeError(w, http.StatusInternalServerError, "获取领域列表失败")

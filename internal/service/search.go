@@ -320,14 +320,37 @@ func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags 
 type DomainInfo struct {
 	Domain       string `json:"domain"`
 	ConceptCount int64  `json:"concept_count"`
+	HasReadme    bool   `json:"has_readme"`
 }
 
-func ListDomains() ([]DomainInfo, error) {
+// ListDomains 列出所有领域。
+// 包含：有 concept 的 domain + 只有 README 的 domain（concept_count=0）。
+// q 为空时返回全部；不为空时用 trgm 模糊匹配领域名。
+func ListDomains(q string) ([]DomainInfo, error) {
+	// FULL JOIN：concept 聚合 + domain_meta，两边都覆盖
+	sql := `
+		SELECT
+			COALESCE(c.domain, m.domain) AS domain,
+			COALESCE(c.concept_count, 0) AS concept_count,
+			(m.domain IS NOT NULL) AS has_readme
+		FROM (
+			SELECT domain, COUNT(*) AS concept_count
+			FROM concepts GROUP BY domain
+		) c
+		FULL JOIN domain_meta m ON c.domain = m.domain`
+
+	args := []interface{}{}
+	if q != "" && !store.IsSQLite {
+		sql += ` WHERE similarity(COALESCE(c.domain, m.domain), ?) > 0.1
+				OR COALESCE(c.domain, m.domain) ILIKE ?`
+		args = append(args, q, "%"+q+"%")
+	} else if q != "" {
+		sql += ` WHERE COALESCE(c.domain, m.domain) LIKE ?`
+		args = append(args, "%"+q+"%")
+	}
+	sql += ` ORDER BY concept_count DESC`
+
 	var domains []DomainInfo
-	err := store.DB.Model(&model.Concept{}).
-		Select("domain, count(*) as concept_count").
-		Group("domain").
-		Order("concept_count DESC").
-		Scan(&domains).Error
+	err := store.DB.Raw(sql, args...).Scan(&domains).Error
 	return domains, err
 }
