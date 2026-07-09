@@ -295,7 +295,7 @@ func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags 
 			ID: c.ID, Domain: c.Domain, Type: c.Type,
 			Title: c.Title, Description: c.Description,
 			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
-			MatchReason: "vector_match",
+			MatchReason: "text_match",
 		})
 	}
 	// trgm 结果补充（向量没命中的精确匹配）
