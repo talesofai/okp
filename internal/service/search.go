@@ -83,16 +83,20 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		query := params.Query
 		if store.IsSQLite {
 			like := "%" + query + "%"
-			q = q.Where("(id = ? OR id LIKE ? OR title LIKE ? OR description LIKE ?)",
-				query, query+"%", like, like)
+			q = q.Where("(id = ? OR id LIKE ? OR title LIKE ? OR description LIKE ? OR CAST(frontmatter AS TEXT) LIKE ?)",
+				query, query+"%", like, like, like)
 			textSearch = true
 		} else if looksLikePath(query) {
 			q = q.Where("id = ? OR id LIKE ?", query, query+"%")
 		} else {
 			for _, w := range splitQuery(query) {
 				like := "%" + w + "%"
-				q = q.Where("(title ILIKE ? OR description ILIKE ? OR similarity(title, ?) > 0.2)",
-					like, like, w)
+				// title/description/id/frontmatter 子串命中 + 标题 trigram
+				q = q.Where(`(
+					title ILIKE ? OR description ILIKE ? OR id ILIKE ?
+					OR frontmatter::text ILIKE ?
+					OR similarity(title, ?) > 0.3
+				)`, like, like, like, like, w)
 			}
 			textSearch = true
 		}
@@ -107,12 +111,13 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	if params.Query != "" && !store.IsSQLite && embedAPIKey != "" {
 		vecResults, _ := vectorSearch(params.Query, params.Domain, params.Type, params.Limit)
 		if len(vecResults) > 0 {
+			// 字符命中按精确度排序后再取 limit
+			q = applyExactnessOrder(q, params.Query)
 			q = q.Offset(params.Offset).Limit(params.Limit)
 			var trgmConcepts []model.Concept
 			_ = q.Find(&trgmConcepts).Error
 
 			merged := mergeResults(trgmConcepts, vecResults, params.Query, params.Tags, params.Limit)
-			// count 用实际合并结果数，不用 trgm COUNT
 			return merged, int64(len(merged)), nil
 		}
 	}
@@ -142,22 +147,33 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 	return results, total, nil
 }
 
+// applyExactnessOrder：子串精确命中优先于纯 trigram 模糊
+func applyExactnessOrder(q *gorm.DB, query string) *gorm.DB {
+	if store.IsSQLite || query == "" {
+		return q
+	}
+	like := "%" + query + "%"
+	return q.Clauses(clause.OrderBy{
+		Expression: clause.Expr{
+			SQL: `CASE
+				WHEN title ILIKE ? THEN 0
+				WHEN description ILIKE ? THEN 1
+				WHEN frontmatter::text ILIKE ? THEN 2
+				WHEN id ILIKE ? THEN 3
+				ELSE 4
+			END ASC, similarity(title, ?) DESC`,
+			Vars: []interface{}{like, like, like, like, query},
+		},
+	})
+}
+
 // applySort 决定排序策略：
-//   - 有文本搜索且单词时用 trgm 相似度
+//   - 有文本搜索时：精确子串优先，再 similarity
 //   - sort 显式指定时按参数
 //   - 默认 updated_at DESC
 func applySort(q *gorm.DB, sort string, textSearch bool, query string) *gorm.DB {
-	// 文本搜索单词时按相似度排序（优先于 sort 参数）
-	if textSearch && !store.IsSQLite && query != "" {
-		words := splitQuery(query)
-		if len(words) == 1 {
-			return q.Clauses(clause.OrderBy{
-				Expression: clause.Expr{
-					SQL:  "similarity(title, ?) DESC",
-					Vars: []interface{}{words[0]},
-				},
-			})
-		}
+	if textSearch && !store.IsSQLite && query != "" && sort == "" {
+		return applyExactnessOrder(q, query)
 	}
 
 	switch sort {
@@ -171,6 +187,9 @@ func applySort(q *gorm.DB, sort string, textSearch bool, query string) *gorm.DB 
 	case "title:asc":
 		return q.Order("title ASC")
 	default:
+		if textSearch && !store.IsSQLite && query != "" {
+			return applyExactnessOrder(q, query)
+		}
 		return q.Order("updated_at DESC")
 	}
 }
@@ -279,36 +298,72 @@ func vectorSearch(query, domain, typ string, limit int) ([]model.Concept, error)
 	return concepts, err
 }
 
-// mergeResults 合并 trgm 和向量结果
-// trgm 精确命中优先（字符级命中精度最高），vector 补充语义相关内容
+// mergeResults 合并 trgm 和向量结果。
+// 规则：
+//  1. 先放字符精确命中（title/description/frontmatter 含 query）
+//  2. 再放其余 trgm 结果
+//  3. 最后补 vector 语义结果
 func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags []string, limit int) []SearchResult {
 	seen := map[string]bool{}
 	results := []SearchResult{}
+	q := strings.ToLower(strings.TrimSpace(query))
 
-	// trgm 精确命中优先
+	containsQuery := func(c model.Concept) bool {
+		if q == "" {
+			return false
+		}
+		if strings.Contains(strings.ToLower(c.Title), q) ||
+			strings.Contains(strings.ToLower(c.Description), q) ||
+			strings.Contains(strings.ToLower(c.ID), q) {
+			return true
+		}
+		if c.Frontmatter != nil {
+			for _, v := range c.Frontmatter {
+				if s, ok := v.(string); ok && strings.Contains(strings.ToLower(s), q) {
+					return true
+				}
+				// 非 string 也转一下
+				if strings.Contains(strings.ToLower(fmt.Sprint(v)), q) {
+					return true
+				}
+			}
+		}
+		for _, t := range c.Tags {
+			if strings.Contains(strings.ToLower(t), q) {
+				return true
+			}
+		}
+		return false
+	}
+
+	appendOne := func(c model.Concept) {
+		if seen[c.ID] {
+			return
+		}
+		seen[c.ID] = true
+		results = append(results, SearchResult{
+			ID: c.ID, Domain: c.Domain, Type: c.Type,
+			Title: c.Title, Description: c.Description,
+			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
+		})
+	}
+
+	// 1) exact substring from trgm set
 	for _, c := range trgm {
-		if seen[c.ID] {
-			continue
+		if containsQuery(c) {
+			appendOne(c)
 		}
-		seen[c.ID] = true
-		results = append(results, SearchResult{
-			ID: c.ID, Domain: c.Domain, Type: c.Type,
-			Title: c.Title, Description: c.Description,
-			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
-		})
 	}
-	// vector 补充（trgm 没命中的语义相关）
+	// 2) remaining trgm
+	for _, c := range trgm {
+		appendOne(c)
+	}
+	// 3) vector supplements only if we still have room;
+	//    and only when query has no/weak exact hits, still useful for recall.
 	for _, c := range vec {
-		if seen[c.ID] {
-			continue
-		}
-		seen[c.ID] = true
-		results = append(results, SearchResult{
-			ID: c.ID, Domain: c.Domain, Type: c.Type,
-			Title: c.Title, Description: c.Description,
-			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
-		})
+		appendOne(c)
 	}
+
 	if len(results) > limit {
 		return results[:limit]
 	}
