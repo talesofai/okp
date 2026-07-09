@@ -280,13 +280,13 @@ func vectorSearch(query, domain, typ string, limit int) ([]model.Concept, error)
 }
 
 // mergeResults 合并 trgm 和向量结果
-// trgm 有精确匹配时优先（字符级命中），vector 补充语义相关内容
+// vector 优先（语义最准，包含 frontmatter），trgm 补充精确匹配项
 func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags []string, limit int) []SearchResult {
 	seen := map[string]bool{}
 	results := []SearchResult{}
 
-	// trgm 精确匹配优先
-	for _, c := range trgm {
+	// vector 优先
+	for _, c := range vec {
 		if seen[c.ID] {
 			continue
 		}
@@ -297,8 +297,8 @@ func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags 
 			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
 		})
 	}
-	// vector 补充（trgm 没命中的语义相关）
-	for _, c := range vec {
+	// trgm 补充（vector 没命中的）
+	for _, c := range trgm {
 		if seen[c.ID] {
 			continue
 		}
