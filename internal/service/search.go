@@ -279,25 +279,13 @@ func vectorSearch(query, domain, typ string, limit int) ([]model.Concept, error)
 	return concepts, err
 }
 
-// mergeResults 合并 trgm 和向量结果，向量结果用 vector_match 标识
+// mergeResults 合并 trgm 和向量结果
+// 向量结果优先（语义最准），trgm 补充精确匹配的项目
 func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags []string, limit int) []SearchResult {
 	seen := map[string]bool{}
 	results := []SearchResult{}
 
-	// trgm 结果优先
-	for _, c := range trgm {
-		if seen[c.ID] {
-			continue
-		}
-		seen[c.ID] = true
-		results = append(results, SearchResult{
-			ID: c.ID, Domain: c.Domain, Type: c.Type,
-			Title: c.Title, Description: c.Description,
-			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
-			MatchReason: matchReason(c, query, tags),
-		})
-	}
-	// 向量结果补凅（trgm 没命中的）
+	// 向量结果优先（语义搜索，包含跨语言）
 	for _, c := range vec {
 		if seen[c.ID] {
 			continue
@@ -308,6 +296,19 @@ func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags 
 			Title: c.Title, Description: c.Description,
 			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
 			MatchReason: "vector_match",
+		})
+	}
+	// trgm 结果补充（向量没命中的精确匹配）
+	for _, c := range trgm {
+		if seen[c.ID] {
+			continue
+		}
+		seen[c.ID] = true
+		results = append(results, SearchResult{
+			ID: c.ID, Domain: c.Domain, Type: c.Type,
+			Title: c.Title, Description: c.Description,
+			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
+			MatchReason: matchReason(c, query, tags),
 		})
 	}
 	if len(results) > limit {
