@@ -1,6 +1,6 @@
 ---
 name: okp-search
-version: 1.4.0
+version: 1.4.1
 description: "在 Open Knowledge Pool 中搜索和导航知识。面向消费 agent：先读 domain README → 按 schema 精确过滤/搜索 → light list → 精读少数 → 沿 links 导航。"
 metadata:
   requires:
@@ -58,6 +58,11 @@ okp sample --domain <domain> --limit 5
 根据 README 里的 schema 和 How to use，选择合适的组合：
 
 ```bash
+# 列出某个 domain 的 concept（无 query 即按 domain 浏览；默认 limit 50）
+okp search --domain <domain>
+okp search --domain <domain> --limit 100
+okp search --domain <domain> --limit 50 --offset 50
+
 # 结构过滤（domain / type / tag 等）
 okp search --domain <domain> --type <type>
 okp search --domain <domain> --tag <tag>
@@ -72,6 +77,7 @@ okp search "<query>" --domain <domain> --type <type>
 ```
 
 **原则：**
+- 要浏览某 domain 下有哪些 concept → `okp search --domain <domain>`（可加 `--limit` / `--offset` 分页）
 - 知道具体实体名 → 文本查询
 - 知道结构化字段（谁发的、哪个群、哪个 wiki）→ `--filter`，比纯文本更准
 - 多字段可叠加，均为 AND
