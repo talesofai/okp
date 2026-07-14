@@ -1,6 +1,6 @@
 ---
 name: okp-import
-version: 1.3.0
+version: 1.4.0
 description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领域 owner 的 agent：读 domain README → 查重 → 蒸馏 → 校验 → 写入。"
 metadata:
   requires:
@@ -98,7 +98,7 @@ okp search "<title>" --domain <domain> --type <type>
   },
   "provenance": {
     "source": "feishu-sync",
-    "agent": "okp-import/1.2",
+    "agent": "okp-import/1.4",
     "raw_ref": "https://..."
   }
 }
@@ -116,6 +116,11 @@ okp put <id> -f concept.json
 okp batch concepts.ndjson
 ```
 
+`put` 与 `batch` 行为一致：
+- 新写入 / 内容有变更 → 落库后自动进入可检索索引（异步，通常数秒内）
+- 内容未变的幂等重导 → 跳过写入；若该条此前未建好索引，服务端会补上
+- **不要**再找单独的「建索引 / embed」命令——没有，也不需要
+
 422 失败时 API 返回 `fix` 字段说明如何修复：
 - `frontmatter.<field> 是必填字段` → 补填该字段
 - `疑似重复` → 用 `okp search` 确认是否已有
@@ -123,11 +128,16 @@ okp batch concepts.ndjson
 
 ### Step 5: 验证
 
+写入返回成功后稍等片刻再搜（大批量导入可多等几秒）：
+
 ```bash
 okp sample --domain <domain> --limit 3     # 随机抽样确认数据结构
-okp search --domain <domain> --sort date:desc --limit 5   # 按时间看最新导入
+okp search "<title 关键词>" --domain <domain> --limit 5
+okp search --domain <domain> --sort date:desc --limit 5   # 时序类看最新
 okp get <id>                               # 确认单条完整
 ```
+
+若刚写入的 concept 暂时搜不到：再等几秒重试 `okp search` / `okp get`；不要重写一遍，除非内容本身要改。
 
 ## id 命名规范
 
@@ -140,7 +150,7 @@ okp get <id>                               # 确认单条完整
 | 字段 | 说明 |
 |---|---|
 | `source` | 数据来源，如 `feishu-sync`、`manual`、`fandom-crawl` |
-| `agent` | 写入方，如 `okp-import/1.2` |
+| `agent` | 写入方，如 `okp-import/1.4` |
 | `raw_ref` | 原始数据 URL 或路径 |
 
 ## 不在本 skill 范围
