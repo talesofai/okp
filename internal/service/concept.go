@@ -146,20 +146,26 @@ func PutConcept(c *model.Concept) (*model.Concept, []ValidationError, error) {
 	if result.Error == nil {
 		// 已存在 → 检查 content_hash
 		if prev.ContentHash == c.ComputeHash() {
-			// 内容未变 → skip
+			// 内容未变 → skip；若尚无可用向量则补嵌
+			if prev.EmbedStatus != "done" {
+				AsyncEmbed(prev.ID)
+			}
 			return &prev, nil, nil
 		}
-		// 内容变化 → 更新
+		// 内容变化 → 更新后重新嵌入。
+		// 必须显式写 EmbedStatus：请求体不含该字段时 zero value 会把 status 清空。
 		c.CreatedAt = prev.CreatedAt
+		c.EmbedStatus = "pending"
 		if err := db.Save(c).Error; err != nil {
 			return nil, nil, err
 		}
-		// 记录 revision
 		saveRevision(c, "update")
+		AsyncEmbed(c.ID)
 		return c, nil, nil
 	}
 
-	// 新创建或更新
+	// 新创建
+	c.EmbedStatus = "pending"
 	if err := db.Save(c).Error; err != nil {
 		return nil, nil, err
 	}
@@ -325,6 +331,8 @@ func BatchPutConcepts(concepts []model.Concept) []BatchResult {
 		existingMap[existing[i].ID] = &existing[i]
 	}
 
+	needEmbed := make([]string, 0, len(concepts))
+
 	tx := db.Begin()
 	for i := range concepts {
 		c := &concepts[i]
@@ -342,9 +350,13 @@ func BatchPutConcepts(concepts []model.Concept) []BatchResult {
 		if prev, ok := existingMap[c.ID]; ok {
 			if prev.ContentHash == c.ContentHash {
 				results[i] = BatchResult{ID: c.ID, Status: "skipped"}
+				if prev.EmbedStatus != "done" {
+					needEmbed = append(needEmbed, prev.ID)
+				}
 				continue
 			}
 			c.CreatedAt = prev.CreatedAt
+			c.EmbedStatus = "pending"
 			if err := tx.Save(c).Error; err != nil {
 				tx.Rollback()
 				// 事务失败则逐条 fallback
@@ -352,19 +364,28 @@ func BatchPutConcepts(concepts []model.Concept) []BatchResult {
 				for j := i + 1; j < len(concepts); j++ {
 					results[j] = putOne(db, &concepts[j])
 				}
+				for _, id := range needEmbed {
+					AsyncEmbed(id)
+				}
 				return results
 			}
 			results[i] = BatchResult{ID: c.ID, Status: "updated"}
+			needEmbed = append(needEmbed, c.ID)
 		} else {
+			c.EmbedStatus = "pending"
 			if err := tx.Create(c).Error; err != nil {
 				tx.Rollback()
 				results[i] = BatchResult{ID: c.ID, Status: "error", Error: err.Error()}
 				for j := i + 1; j < len(concepts); j++ {
 					results[j] = putOne(db, &concepts[j])
 				}
+				for _, id := range needEmbed {
+					AsyncEmbed(id)
+				}
 				return results
 			}
 			results[i] = BatchResult{ID: c.ID, Status: "created"}
+			needEmbed = append(needEmbed, c.ID)
 		}
 	}
 
@@ -373,6 +394,10 @@ func BatchPutConcepts(concepts []model.Concept) []BatchResult {
 		for i := range concepts {
 			results[i] = putOne(db, &concepts[i])
 		}
+		return results
+	}
+	for _, id := range needEmbed {
+		AsyncEmbed(id)
 	}
 	return results
 }
@@ -382,16 +407,23 @@ func putOne(db *gorm.DB, c *model.Concept) BatchResult {
 	var prev model.Concept
 	if err := db.First(&prev, "id = ?", c.ID).Error; err == nil {
 		if prev.ContentHash == c.ContentHash {
+			if prev.EmbedStatus != "done" {
+				AsyncEmbed(prev.ID)
+			}
 			return BatchResult{ID: c.ID, Status: "skipped"}
 		}
 		c.CreatedAt = prev.CreatedAt
+		c.EmbedStatus = "pending"
 		if err := db.Save(c).Error; err != nil {
 			return BatchResult{ID: c.ID, Status: "error", Error: err.Error()}
 		}
+		AsyncEmbed(c.ID)
 		return BatchResult{ID: c.ID, Status: "updated"}
 	}
+	c.EmbedStatus = "pending"
 	if err := db.Create(c).Error; err != nil {
 		return BatchResult{ID: c.ID, Status: "error", Error: err.Error()}
 	}
+	AsyncEmbed(c.ID)
 	return BatchResult{ID: c.ID, Status: "created"}
 }

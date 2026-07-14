@@ -281,8 +281,8 @@ func vectorSearch(query, domain, typ string, limit int) ([]model.Concept, error)
 	}
 	vecStr := floatsToVecStr(vecs[0])
 
+	// 有 embedding 就参与检索；不严格依赖 embed_status，避免批量导入后 status 未回写导致只命中几条
 	q := store.DB.Model(&model.Concept{}).
-		Where("embed_status = 'done'").
 		Where("embedding IS NOT NULL")
 	if domain != "" {
 		q = q.Where("domain = ?", domain)
