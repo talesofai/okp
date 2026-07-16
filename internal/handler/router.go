@@ -124,6 +124,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 
 // PUT /api/v1/me/profile
 // Body: {"username": "...", "display_name": "...", "avatar_url": "..."}
+// Used by portal to backfill legacy users and keep Cohub display fields in sync.
 func updateMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromContext(r)
 
@@ -137,18 +138,53 @@ func updateMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// map Updates writes empty strings too (unlike struct Updates zero-value skip).
 	updates := map[string]any{
 		"username":     body.Username,
-		"display_name":  body.DisplayName,
-		"avatar_url":    body.AvatarURL,
+		"display_name": body.DisplayName,
+		"avatar_url":   body.AvatarURL,
 	}
-	if err := store.DB.Model(&model.User{}).Where("uuid = ?", userID).Updates(updates).Error; err != nil {
-		slog.Error("update profile failed", "uuid", userID, "error", err)
+	res := store.DB.Model(&model.User{}).Where("uuid = ?", userID).Updates(updates)
+	if res.Error != nil {
+		slog.Error("update profile failed", "uuid", userID, "error", res.Error)
 		writeError(w, http.StatusInternalServerError, "update failed")
 		return
 	}
+	if res.RowsAffected == 0 {
+		// Ensure row exists for very first write races.
+		now := time.Now().UTC()
+		user := model.User{
+			UUID:        userID,
+			AuthType:    auth.AuthTypeFromContext(r),
+			Role:        "reader",
+			Username:    body.Username,
+			DisplayName: body.DisplayName,
+			AvatarURL:   body.AvatarURL,
+			LastSeen:    now,
+			CreatedAt:   now,
+		}
+		if err := store.DB.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "uuid"}},
+			DoUpdates: clause.AssignmentColumns([]string{"username", "display_name", "avatar_url", "last_seen", "auth_type"}),
+		}).Create(&user).Error; err != nil {
+			slog.Error("upsert profile failed", "uuid", userID, "error", err)
+			writeError(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	var user model.User
+	if err := store.DB.Where("uuid = ?", userID).First(&user).Error; err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":       "updated",
+		"uuid":         user.UUID,
+		"username":     user.Username,
+		"display_name": user.DisplayName,
+		"avatar_url":   user.AvatarURL,
+	})
 }
 
 // PUT /api/v1/concepts/{id}

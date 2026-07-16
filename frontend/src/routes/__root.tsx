@@ -3,7 +3,7 @@ import { Text, Button, Input, Surface } from "@cloudflare/kumo";
 import { useRuntime, useCohubUser } from "../lib/runtime";
 import { useApi } from "../api/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export const Route = createRootRoute({
   component: Root,
@@ -152,6 +152,8 @@ function UserBadge() {
   const cohubUser = useCohubUser();
   const api = useApi();
   const queryClient = useQueryClient();
+  // Prevent re-sending the same Cohub→OKP profile payload in this session.
+  const lastSyncedRef = useRef<string | null>(null);
 
   const { data: okpMe } = useQuery({
     queryKey: ["me"],
@@ -162,33 +164,50 @@ function UserBadge() {
   const profileMutation = useMutation({
     mutationFn: api.updateMyProfile,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["me"] }),
+    onError: () => {
+      // Allow retry on next render if PUT failed (e.g. old backend).
+      lastSyncedRef.current = null;
+    },
   });
 
-  // Sync Cohub profile into OKP once when it differs.
+  // Sync Cohub profile into OKP for both new and legacy users.
+  // Legacy users already have a users row but empty username/display/avatar.
   useEffect(() => {
-    if (!cohubUser || !okpMe || profileMutation.isPending || profileMutation.isSuccess) return;
+    if (!cohubUser || !okpMe || profileMutation.isPending) return;
 
     const profile = {
       username: cohubUser.username ?? "",
       display_name: cohubUser.displayName ?? "",
       avatar_url: cohubUser.avatarUrl ?? "",
     };
-    if (
-      profile.username === (okpMe.username ?? "") &&
-      profile.display_name === (okpMe.display_name ?? "") &&
-      profile.avatar_url === (okpMe.avatar_url ?? "")
-    ) return;
+    // Nothing useful from Cohub — skip.
+    if (!profile.username && !profile.display_name && !profile.avatar_url) return;
 
+    const okpEmpty =
+      !(okpMe.username ?? "") &&
+      !(okpMe.display_name ?? "") &&
+      !(okpMe.avatar_url ?? "");
+    const differs =
+      profile.username !== (okpMe.username ?? "") ||
+      profile.display_name !== (okpMe.display_name ?? "") ||
+      profile.avatar_url !== (okpMe.avatar_url ?? "");
+
+    // Fill empty legacy profiles; also refresh when Cohub profile changed.
+    if (!okpEmpty && !differs) return;
+
+    const key = `${okpMe.uuid}|${profile.username}|${profile.display_name}|${profile.avatar_url}`;
+    if (lastSyncedRef.current === key) return;
+    lastSyncedRef.current = key;
     profileMutation.mutate(profile);
   }, [
     cohubUser?.username,
     cohubUser?.displayName,
     cohubUser?.avatarUrl,
+    okpMe?.uuid,
     okpMe?.username,
     okpMe?.display_name,
     okpMe?.avatar_url,
     profileMutation.isPending,
-    profileMutation.isSuccess,
   ]);
 
   if (!cohubUser && !okpMe) {
