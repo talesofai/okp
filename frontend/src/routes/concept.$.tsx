@@ -1,10 +1,28 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useMemo } from "react";
 import { useApi } from "../api/client";
 import { Text, Badge, Surface, Empty, Loader } from "@cloudflare/kumo";
 
 declare const marked: { parse: (md: string) => string };
+
+const markdownStyles = `
+  .okp-md h1 { font-size: 1.4em; font-weight: 600; margin: 0.6em 0 0.3em; }
+  .okp-md h2 { font-size: 1.2em; font-weight: 600; margin: 0.6em 0 0.3em; }
+  .okp-md h3 { font-size: 1.1em; font-weight: 600; margin: 0.5em 0 0.2em; }
+  .okp-md p { margin: 0.4em 0; }
+  .okp-md ul, .okp-md ol { margin: 0.4em 0; padding-left: 1.4em; }
+  .okp-md li { margin: 0.2em 0; }
+  .okp-md code { background: rgba(128,128,128,0.15); padding: 1px 5px; border-radius: 3px; font-size: 0.88em; font-family: ui-monospace, monospace; }
+  .okp-md pre { background: rgba(128,128,128,0.1); padding: 12px; border-radius: 6px; overflow-x: auto; margin: 0.6em 0; }
+  .okp-md pre code { background: none; padding: 0; }
+  .okp-md a { color: #6366f1; }
+  .okp-md strong { font-weight: 600; }
+  .okp-md blockquote { border-left: 3px solid rgba(128,128,128,0.3); padding-left: 12px; margin: 0.5em 0; opacity: 0.8; }
+  .okp-md table { border-collapse: collapse; margin: 0.5em 0; }
+  .okp-md th, .okp-md td { border: 1px solid rgba(128,128,128,0.2); padding: 4px 10px; }
+  .okp-md hr { border: none; border-top: 1px solid rgba(128,128,128,0.2); margin: 0.8em 0; }
+`;
 
 export const Route = createFileRoute("/concept/$")({
   component: ConceptDetail,
@@ -14,20 +32,18 @@ function ConceptDetail() {
   const api = useApi();
   const params = Route.useParams() as Record<string, string>;
   const id = params.$ ?? params._splat ?? "";
-  const bodyRef = useRef<HTMLDivElement>(null);
 
   const { data: concept, isLoading, error } = useQuery({
     queryKey: ["concept", id],
     queryFn: () => api.getConcept(id),
   });
 
-  useEffect(() => {
-    if (concept?.body && bodyRef.current) {
-      bodyRef.current.innerHTML = typeof marked !== "undefined"
-        ? marked.parse(concept.body)
-        : `<pre>${concept.body}</pre>`;
-    }
-  }, [concept]);
+  const bodyHtml = useMemo(() => {
+    if (!concept?.body) return "";
+    return typeof marked !== "undefined"
+      ? marked.parse(concept.body)
+      : `<pre>${concept.body}</pre>`;
+  }, [concept?.body]);
 
   if (isLoading) {
     return <div style={{ textAlign: "center", padding: 64 }}><Loader /></div>;
@@ -41,6 +57,8 @@ function ConceptDetail() {
 
   return (
     <div style={{ maxWidth: 760 }}>
+      <style dangerouslySetInnerHTML={{ __html: markdownStyles }} />
+
       <Link to="/domain/$domain" params={{ domain: concept.domain }} style={{ textDecoration: "none" }}>
         <Text size="sm" color="secondary">← {concept.domain}</Text>
       </Link>
@@ -77,11 +95,11 @@ function ConceptDetail() {
         </Surface>
       )}
 
-      {concept.body && (
+      {bodyHtml && (
         <div
-          ref={bodyRef}
-          className="markdown-body"
-          style={{ marginTop: 32, lineHeight: 1.7 }}
+          className="okp-md"
+          style={{ marginTop: 32, lineHeight: 1.7, fontSize: 15 }}
+          dangerouslySetInnerHTML={{ __html: bodyHtml }}
         />
       )}
 

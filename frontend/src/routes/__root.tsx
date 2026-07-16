@@ -65,6 +65,10 @@ function UserBadge() {
   const name = cohubUser?.displayName || cohubUser?.username || okpMe?.uuid?.slice(0, 8) || "user";
   const avatar = cohubUser?.avatarUrl;
   const role = okpMe?.role || "reader";
+  const roleBg =
+    role === "admin" ? "#7c3aed" :
+    role === "host" ? "#2563eb" :
+    role === "writer" ? "#10b981" : "#6b7280";
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -89,7 +93,7 @@ function UserBadge() {
       </Link>
       <span style={{
         fontSize: 10, padding: "2px 8px", borderRadius: 4,
-        background: role === "writer" ? "#10b981" : "#6b7280",
+        background: roleBg,
         color: "#fff",
       }}>
         {role}

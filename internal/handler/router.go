@@ -1,17 +1,24 @@
 package handler
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	chimw "github.com/go-chi/cors"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
-	"github.com/talesofai/okp/internal/model"
 	auth "github.com/talesofai/okp/internal/middleware"
+	"github.com/talesofai/okp/internal/model"
 	"github.com/talesofai/okp/internal/service"
 	"github.com/talesofai/okp/internal/store"
 )
@@ -57,6 +64,13 @@ func NewRouter() http.Handler {
 	r.Get("/api/v1/health", healthCheck)
 	r.Get("/api/v1/me", meHandler)
 
+	// Domain members & invite codes
+	r.Get("/api/v1/domains/{domain}/members", listDomainMembers)
+	r.Post("/api/v1/domains/{domain}/invites", createInvite)
+	r.Get("/api/v1/domains/{domain}/invites", listInvites)
+	r.Delete("/api/v1/domains/{domain}/invites/{id}", revokeInvite)
+	r.Post("/api/v1/invites/accept", acceptInvite)
+
 	// Admin
 	r.Put("/api/v1/admin/users/{uuid}", updateUserRole)
 
@@ -100,6 +114,7 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 		"role":       user.Role,
 		"last_seen":  user.LastSeen,
 		"created_at": user.CreatedAt,
+		"domains":    auth.GetUserDomains(userID),
 	})
 }
 
@@ -439,4 +454,353 @@ func embedBatch(w http.ResponseWriter, r *http.Request) {
 		"processed": processed,
 		"errors":    errors,
 	})
+}
+
+// ── Domain members & invite codes ──────────────────────────
+
+// GET /api/v1/domains/{domain}/members
+func listDomainMembers(w http.ResponseWriter, r *http.Request) {
+	domain := chi.URLParam(r, "domain")
+	userRole := auth.ResolveDomainRole(auth.UserIDFromContext(r), domain)
+	if userRole != "admin" && userRole != "host" {
+		writeError(w, http.StatusForbidden, "only admin or host can view members")
+		return
+	}
+	var members []model.DomainMember
+	if err := store.DB.Where("domain = ?", domain).Order("created_at asc").Find(&members).Error; err != nil {
+		writeError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, members)
+}
+
+// POST /api/v1/domains/{domain}/invites
+// Body: {"role":"writer","expires_in_hours":72,"max_uses":1}
+// Returns invite metadata plus plaintext "code" once.
+func createInvite(w http.ResponseWriter, r *http.Request) {
+	domain := chi.URLParam(r, "domain")
+	userID := auth.UserIDFromContext(r)
+	userRole := auth.ResolveDomainRole(userID, domain)
+	if userRole != "admin" && userRole != "host" {
+		writeError(w, http.StatusForbidden, "only admin or host can create invites")
+		return
+	}
+
+	var body struct {
+		Role           string `json:"role"`
+		ExpiresInHours int    `json:"expires_in_hours"`
+		MaxUses        int    `json:"max_uses"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if body.Role == "" {
+		body.Role = "writer"
+	}
+	// Phase 1: public domains only invite writers. reader/host not allowed here.
+	if body.Role != "writer" {
+		writeError(w, http.StatusBadRequest, "role must be writer")
+		return
+	}
+	if body.ExpiresInHours <= 0 {
+		body.ExpiresInHours = 72
+	}
+	if body.ExpiresInHours > 24*30 {
+		writeError(w, http.StatusBadRequest, "expires_in_hours must be <= 720")
+		return
+	}
+	if body.MaxUses <= 0 {
+		body.MaxUses = 1
+	}
+	if body.MaxUses > 100 {
+		writeError(w, http.StatusBadRequest, "max_uses must be <= 100")
+		return
+	}
+
+	code, err := generateInviteCode()
+	if err != nil {
+		slog.Error("generate invite code failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create failed")
+		return
+	}
+	now := time.Now().UTC()
+	invite := model.DomainInvite{
+		ID:        uuid.NewString(),
+		CodeHash:  hashInviteCode(code),
+		Domain:    domain,
+		Role:      body.Role,
+		CreatedBy: userID,
+		CreatedAt: now,
+		ExpiresAt: now.Add(time.Duration(body.ExpiresInHours) * time.Hour),
+		MaxUses:   body.MaxUses,
+		UsedCount: 0,
+	}
+	if err := store.DB.Create(&invite).Error; err != nil {
+		slog.Error("create invite failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create failed")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":         invite.ID,
+		"domain":     invite.Domain,
+		"role":       invite.Role,
+		"created_by": invite.CreatedBy,
+		"created_at": invite.CreatedAt,
+		"expires_at": invite.ExpiresAt,
+		"max_uses":   invite.MaxUses,
+		"used_count": invite.UsedCount,
+		"code":       code,
+		"work_url":   "https://cohub.run/koujiaxin/real-canvas/w/okp",
+		"share_text": formatInviteShareText(invite.Domain, invite.Role, code),
+	})
+}
+
+// GET /api/v1/domains/{domain}/invites
+func listInvites(w http.ResponseWriter, r *http.Request) {
+	domain := chi.URLParam(r, "domain")
+	userRole := auth.ResolveDomainRole(auth.UserIDFromContext(r), domain)
+	if userRole != "admin" && userRole != "host" {
+		writeError(w, http.StatusForbidden, "only admin or host can view invites")
+		return
+	}
+	var invites []model.DomainInvite
+	if err := store.DB.Where("domain = ?", domain).Order("created_at desc").Find(&invites).Error; err != nil {
+		writeError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	out := make([]map[string]any, 0, len(invites))
+	now := time.Now().UTC()
+	for _, inv := range invites {
+		status := "active"
+		if inv.RevokedAt != nil {
+			status = "revoked"
+		} else if inv.UsedCount >= inv.MaxUses {
+			status = "exhausted"
+		} else if !inv.ExpiresAt.IsZero() && inv.ExpiresAt.Before(now) {
+			status = "expired"
+		}
+		out = append(out, map[string]any{
+			"id":           inv.ID,
+			"domain":       inv.Domain,
+			"role":         inv.Role,
+			"created_by":   inv.CreatedBy,
+			"created_at":   inv.CreatedAt,
+			"expires_at":   inv.ExpiresAt,
+			"max_uses":     inv.MaxUses,
+			"used_count":   inv.UsedCount,
+			"revoked_at":   inv.RevokedAt,
+			"last_used_at": inv.LastUsedAt,
+			"last_used_by": inv.LastUsedBy,
+			"status":       status,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// DELETE /api/v1/domains/{domain}/invites/{id}
+func revokeInvite(w http.ResponseWriter, r *http.Request) {
+	domain := chi.URLParam(r, "domain")
+	id := chi.URLParam(r, "id")
+	userRole := auth.ResolveDomainRole(auth.UserIDFromContext(r), domain)
+	if userRole != "admin" && userRole != "host" {
+		writeError(w, http.StatusForbidden, "only admin or host can revoke invites")
+		return
+	}
+	now := time.Now().UTC()
+	res := store.DB.Model(&model.DomainInvite{}).
+		Where("id = ? AND domain = ? AND revoked_at IS NULL", id, domain).
+		Update("revoked_at", now)
+	if res.Error != nil {
+		writeError(w, http.StatusInternalServerError, "revoke failed")
+		return
+	}
+	if res.RowsAffected == 0 {
+		writeError(w, http.StatusNotFound, "invite not found or already revoked")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "revoked", "id": id})
+}
+
+// POST /api/v1/invites/accept
+// Body: {"code":"OKP-XXXX-XXXX"}
+func acceptInvite(w http.ResponseWriter, r *http.Request) {
+	userUUID := auth.UserIDFromContext(r)
+	if userUUID == "" {
+		writeError(w, http.StatusUnauthorized, "missing user")
+		return
+	}
+
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	code := normalizeInviteCode(body.Code)
+	if code == "" {
+		writeError(w, http.StatusBadRequest, "code is required")
+		return
+	}
+	codeHash := hashInviteCode(code)
+
+	var accepted model.DomainMember
+	var inviteDomain, inviteRole string
+
+	err := store.DB.Transaction(func(tx *gorm.DB) error {
+		var invite model.DomainInvite
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("code_hash = ?", codeHash).
+			First(&invite).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return errInviteNotFound
+			}
+			return err
+		}
+		now := time.Now().UTC()
+		if invite.RevokedAt != nil {
+			return errInviteRevoked
+		}
+		if !invite.ExpiresAt.IsZero() && invite.ExpiresAt.Before(now) {
+			return errInviteExpired
+		}
+		if invite.UsedCount >= invite.MaxUses {
+			return errInviteExhausted
+		}
+		if invite.Role != "reader" && invite.Role != "writer" {
+			return errInviteInvalidRole
+		}
+
+		// Do not downgrade existing higher role.
+		var existing model.DomainMember
+		err := tx.Where("domain = ? AND user_id = ?", invite.Domain, userUUID).First(&existing).Error
+		if err == nil {
+			if roleRank(existing.Role) >= roleRank(invite.Role) {
+				if err := tx.Model(&model.DomainInvite{}).Where("id = ?", invite.ID).Updates(map[string]any{
+					"used_count":   invite.UsedCount + 1,
+					"last_used_at": now,
+					"last_used_by": userUUID,
+				}).Error; err != nil {
+					return err
+				}
+				accepted = existing
+				inviteDomain = invite.Domain
+				inviteRole = existing.Role
+				return nil
+			}
+		} else if err != gorm.ErrRecordNotFound {
+			return err
+		}
+
+		member := model.DomainMember{
+			Domain:    invite.Domain,
+			UserID:    userUUID,
+			Role:      invite.Role,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "domain"}, {Name: "user_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"role", "updated_at"}),
+		}).Create(&member).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(&model.DomainInvite{}).Where("id = ?", invite.ID).Updates(map[string]any{
+			"used_count":   invite.UsedCount + 1,
+			"last_used_at": now,
+			"last_used_by": userUUID,
+		}).Error; err != nil {
+			return err
+		}
+
+		accepted = member
+		inviteDomain = invite.Domain
+		inviteRole = invite.Role
+		return nil
+	})
+	if err != nil {
+		switch err {
+		case errInviteNotFound:
+			writeError(w, http.StatusNotFound, "invite not found")
+		case errInviteRevoked:
+			writeError(w, http.StatusGone, "invite revoked")
+		case errInviteExpired:
+			writeError(w, http.StatusGone, "invite expired")
+		case errInviteExhausted:
+			writeError(w, http.StatusGone, "invite already used up")
+		case errInviteInvalidRole:
+			writeError(w, http.StatusBadRequest, "invalid invite role")
+		default:
+			slog.Error("accept invite failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "accept failed")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "accepted",
+		"domain": inviteDomain,
+		"role":   inviteRole,
+		"member": accepted,
+	})
+}
+
+var (
+	errInviteNotFound    = errString("invite not found")
+	errInviteRevoked     = errString("invite revoked")
+	errInviteExpired     = errString("invite expired")
+	errInviteExhausted   = errString("invite exhausted")
+	errInviteInvalidRole = errString("invite invalid role")
+)
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
+func roleRank(role string) int {
+	switch role {
+	case "host":
+		return 3
+	case "writer":
+		return 2
+	case "reader":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func normalizeInviteCode(code string) string {
+	code = strings.TrimSpace(strings.ToUpper(code))
+	code = strings.ReplaceAll(code, " ", "")
+	return code
+}
+
+func hashInviteCode(code string) string {
+	sum := sha256.Sum256([]byte(normalizeInviteCode(code)))
+	return hex.EncodeToString(sum[:])
+}
+
+// generateInviteCode returns OKP-XXXX-XXXX using Crockford base32 alphabet
+// (no I/L/O/U) for easier human entry.
+func generateInviteCode() (string, error) {
+	const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	chars := make([]byte, 8)
+	for i := 0; i < 8; i++ {
+		chars[i] = alphabet[int(b[i])%len(alphabet)]
+	}
+	return "OKP-" + string(chars[:4]) + "-" + string(chars[4:]), nil
+}
+
+func formatInviteShareText(domain, role, code string) string {
+	return "邀请你加入 OKP Domain " + domain + "，权限为 " + role + "。\n" +
+		"打开 https://cohub.run/koujiaxin/real-canvas/w/okp\n" +
+		"输入邀请码 " + code
 }

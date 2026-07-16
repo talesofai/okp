@@ -42,6 +42,21 @@ function toMessage(e: unknown) {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** Check if a JWT is expired (with 30s leeway). */
+function isTokenExpired(token: string): boolean {
+  const parts = token.split(".");
+  if (parts.length < 2) return true;
+  try {
+    const payload = JSON.parse(
+      atob(parts[1].replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (parts[1].length % 4)) % 4)),
+    );
+    if (!payload.exp) return false; // no exp, assume valid
+    return payload.exp * 1000 <= Date.now() + 30_000;
+  } catch {
+    return true;
+  }
+}
+
 export function RuntimeProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<RuntimeState>({
     status: "booting",
@@ -92,7 +107,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           client,
           context,
           getToken: workRuntime
-            ? () => workRuntime!.getAccessToken()
+            ? async () => {
+              const t = await workRuntime!.getAccessToken();
+              if (t && !isTokenExpired(t)) return t;
+              // Token expired or missing — force refresh
+              return workRuntime!.getAccessToken({ forceRefresh: true });
+            }
             : null,
           user,
           error: null,

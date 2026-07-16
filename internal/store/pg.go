@@ -67,6 +67,7 @@ func Init() {
 		&model.User{},
 		&model.DomainMeta{},
 		&model.DomainMember{},
+		&model.DomainInvite{},
 	); err != nil {
 		slog.Error("数据库迁移失败", "error", err)
 		panic(err)
