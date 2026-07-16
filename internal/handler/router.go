@@ -55,6 +55,7 @@ func NewRouter() http.Handler {
 	r.Get("/api/v1/embed/stats", embedStats)
 	r.Post("/api/v1/embed/batch", embedBatch)
 	r.Get("/api/v1/health", healthCheck)
+	r.Get("/api/v1/me", meHandler)
 
 	// Admin
 	r.Put("/api/v1/admin/users/{uuid}", updateUserRole)
@@ -80,6 +81,26 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// GET /api/v1/me
+func meHandler(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserIDFromContext(r)
+	authType := auth.AuthTypeFromContext(r)
+
+	var user model.User
+	if err := store.DB.Where("uuid = ?", userID).First(&user).Error; err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"uuid":       user.UUID,
+		"auth_type":  authType,
+		"role":       user.Role,
+		"last_seen":  user.LastSeen,
+		"created_at": user.CreatedAt,
+	})
 }
 
 // PUT /api/v1/concepts/{id}

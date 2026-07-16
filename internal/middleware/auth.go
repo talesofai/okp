@@ -121,6 +121,63 @@ func validateExecutionGrant(token string, key string) (actorUserID string, ok bo
 	return "execution:" + payload.SpaceID, true
 }
 
+// ── Cohub work_session token validation ─────────────────────
+// work_session tokens are HS256 JWTs minted by Cohub's API
+// (POST /api/works/:id/session) and signed with the same
+// APP_ENCRYPTION_KEY used for execution grants.
+// Payload fields: typ="work_session", userUuid, workId, spaceId, exp.
+
+type workSessionPayload struct {
+	Typ      string `json:"typ"`
+	UserUUID string `json:"userUuid"`
+	WorkID   string `json:"workId"`
+	SpaceID  string `json:"spaceId"`
+	Exp      int64  `json:"exp"`
+	Iat      int64  `json:"iat"`
+}
+
+func validateWorkSessionToken(token string, key string) (userUUID string, ok bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return "", false
+	}
+
+	signingInput := parts[0] + "." + parts[1]
+	providedSig, err := b64Decode(parts[2])
+	if err != nil {
+		return "", false
+	}
+
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write([]byte(signingInput))
+	expectedSig := mac.Sum(nil)
+
+	if subtle.ConstantTimeCompare(providedSig, expectedSig) != 1 {
+		return "", false
+	}
+
+	payloadBytes, err := b64Decode(parts[1])
+	if err != nil {
+		return "", false
+	}
+	var payload workSessionPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return "", false
+	}
+
+	if payload.Typ != "work_session" {
+		return "", false
+	}
+	if payload.Exp <= time.Now().Unix() {
+		return "", false
+	}
+	if payload.UserUUID == "" {
+		return "", false
+	}
+
+	return payload.UserUUID, true
+}
+
 // ── Logto JWT validation ────────────────────────────────────
 
 var (
@@ -283,7 +340,15 @@ func Auth(next http.Handler) http.Handler {
 			}
 		}
 
-		// 3. Logto JWT（仅当 token 像 JWT 时才尝试，避免无效网络请求）
+		// 3. Cohub work_session token (for portal/Work frontend)
+		if userID == "" && config.C.ExecutionGrantKey != "" && strings.Count(token, ".") == 2 {
+			if uid, ok := validateWorkSessionToken(token, config.C.ExecutionGrantKey); ok {
+				userID = uid
+				authType = "cohub_work"
+			}
+		}
+
+		// 4. Logto JWT（仅当 token 像 JWT 时才尝试，避免无效网络请求）
 		if userID == "" && config.C.LogtoEndpoint != "" && strings.Count(token, ".") == 2 {
 			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 			defer cancel()
