@@ -1,6 +1,6 @@
 ---
 name: okp-import
-version: 1.4.0
+version: 1.5.0
 description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领域 owner 的 agent：读 domain README → 查重 → 蒸馏 → 校验 → 写入。"
 metadata:
   requires:
@@ -13,9 +13,39 @@ metadata:
 **CRITICAL — 开始前 MUST 确认 okp CLI 已安装并可连接 API：**
 
 ```bash
-npm install -g @markbangwu/okp
+npm install -g @markbangwu/okp@1.1.1
 okp domains    # 确认 API 可达
 ```
+
+当前推荐 CLI：`@markbangwu/okp@1.1.1`（含 `okp invite`）。
+
+## 写权限（先确认再导入）
+
+写入 concept / 更新 domain README 需要其一：
+
+- 全局 `admin`
+- 该 domain 的 `host` 或 `writer`
+
+公开 domain 默认所有人可读，**不代表可写**。
+
+若 `put` / `batch` / `domain --set` 返回 403（write access denied）：
+
+1. 让该 domain 的 host/admin 生成邀请码：
+   ```bash
+   okp invite create <domain> --expires-hours 72 --max-uses 1
+   ```
+2. 当前用户接受：
+   ```bash
+   okp invite accept OKP-XXXX-XXXX
+   ```
+3. 确认成员身份：
+   ```bash
+   okp invite members <domain>
+   ```
+
+邀请码是短码，不是链接路由。门户右上角「邀请」也可输入同一邀请码。
+
+不要通过 invite 授予 `host`；host 转移是独立流程。
 
 ## 工作流（严格按顺序）
 
@@ -98,7 +128,7 @@ okp search "<title>" --domain <domain> --type <type>
   },
   "provenance": {
     "source": "feishu-sync",
-    "agent": "okp-import/1.4",
+    "agent": "okp-import/1.5",
     "raw_ref": "https://..."
   }
 }
@@ -121,7 +151,15 @@ okp batch concepts.ndjson
 - 内容未变的幂等重导 → 跳过写入；若该条此前未建好索引，服务端会补上
 - **不要**再找单独的「建索引 / embed」命令——没有，也不需要
 
-422 失败时 API 返回 `fix` 字段说明如何修复：
+常见失败：
+
+| 状态 | 含义 | 处理 |
+|---|---|---|
+| 403 | 无 domain 写权限 | `okp invite accept <code>` 或联系 host |
+| 422 | frontmatter/校验失败 | 按 `fix` 补字段或改写 |
+| 401 | token 无效/过期 | 检查 `OKP_API_TOKEN` / sandbox execution token |
+
+422 的 `fix` 常见项：
 - `frontmatter.<field> 是必填字段` → 补填该字段
 - `疑似重复` → 用 `okp search` 确认是否已有
 - `provenance.source 为空` → 填数据来源
@@ -150,11 +188,26 @@ okp get <id>                               # 确认单条完整
 | 字段 | 说明 |
 |---|---|
 | `source` | 数据来源，如 `feishu-sync`、`manual`、`fandom-crawl` |
-| `agent` | 写入方，如 `okp-import/1.4` |
+| `agent` | 写入方，如 `okp-import/1.5` |
 | `raw_ref` | 原始数据 URL 或路径 |
+
+## 邀请相关 CLI（host/admin）
+
+```bash
+okp invite create <domain> [--expires-hours 72] [--max-uses 1]
+okp invite list <domain>
+okp invite revoke <domain> <invite-id>
+okp invite accept <code>
+okp invite members <domain>
+```
+
+- create 时明文 code 只显示一次
+- list 不返回明文 code
+- 当前阶段公开 domain 邀请角色为 `writer`
 
 ## 不在本 skill 范围
 
 - 知识搜索 → okp-search
-- domain README 维护 → `okp domain <domain> --set readme.md`
+- domain README 维护之外的门户 UI 操作
 - 数据爬取 → 各 domain 自己的数据管道
+- 私有 domain / reader 邀请（尚未开放）

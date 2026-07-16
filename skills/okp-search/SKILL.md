@@ -1,6 +1,6 @@
 ---
 name: okp-search
-version: 1.4.1
+version: 1.5.0
 description: "在 Open Knowledge Pool 中搜索和导航知识。面向消费 agent：先读 domain README → 按 schema 精确过滤/搜索 → light list → 精读少数 → 沿 links 导航。"
 metadata:
   requires:
@@ -13,15 +13,23 @@ metadata:
 **CRITICAL — 开始前 MUST 确认 okp CLI 已安装并可连接 API：**
 
 ```bash
-npm install -g @markbangwu/okp
+npm install -g @markbangwu/okp@1.1.1
 okp domains   # 确认 API 可达
 ```
+
+当前推荐 CLI：`@markbangwu/okp@1.1.1`。
 
 ## 何时使用
 
 - agent 需要查找知识（角色、画风、操作手册、社媒分享等）。
 - 回答用户问题时需要检索知识池中的结构化知识。
 - 遍历概念之间的关系（通过 links）。
+
+## 读权限
+
+当前默认：**已认证用户可读公开 domain**。  
+搜索/浏览不要求 domain `writer`。  
+写入权限见 okp-import；本 skill 只读。
 
 ## 检索循环（严格按此顺序）
 
@@ -82,6 +90,7 @@ okp search "<query>" --domain <domain> --type <type>
 - 知道结构化字段（谁发的、哪个群、哪个 wiki）→ `--filter`，比纯文本更准
 - 多字段可叠加，均为 AND
 - 时序类数据用 README 推荐的 `--sort`
+- 精确字符/子串命中优先；语义结果作为补充（实现细节对用户透明，不必在回答里展开）
 
 ### Step 5: Light list → 精读
 
@@ -134,6 +143,6 @@ okp links <id>
 
 ## 不在本 skill 范围
 
-- 知识导入 → okp-import
+- 知识导入 / 写权限 / 邀请码 → okp-import
 - domain README 维护 → `okp domain <domain> --set readme.md`
 - OKF bundle 导出 → `okp export <domain>`
