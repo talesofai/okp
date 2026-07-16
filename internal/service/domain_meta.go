@@ -7,6 +7,8 @@ import (
 	"github.com/talesofai/okp/internal/model"
 	"github.com/talesofai/okp/internal/store"
 	"gopkg.in/yaml.v3"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GetDomainMeta 获取 domain 的 README + schema
@@ -18,11 +20,16 @@ func GetDomainMeta(domain string) (*model.DomainMeta, error) {
 	return &meta, nil
 }
 
-// PutDomainMeta 写入/更新 domain README，自动解析 YAML frontmatter 提取 schema
-func PutDomainMeta(domain, readme string) (*model.DomainMeta, error) {
+// PutDomainMeta writes or updates a domain README. When creating a domain, it
+// grants the authenticated creator the domain's single host membership in the
+// same transaction. Existing domains retain their original host.
+func PutDomainMeta(domain, readme, creatorID string) (*model.DomainMeta, bool, error) {
 	schema, err := parseReadmeSchema(readme)
 	if err != nil {
-		return nil, fmt.Errorf("README schema 解析失败: %w", err)
+		return nil, false, fmt.Errorf("README schema 解析失败: %w", err)
+	}
+	if creatorID == "" {
+		return nil, false, fmt.Errorf("creator user id is required")
 	}
 
 	meta := model.DomainMeta{
@@ -30,11 +37,40 @@ func PutDomainMeta(domain, readme string) (*model.DomainMeta, error) {
 		Readme: readme,
 		Schema: model.JSONMap{"fields": schema.Fields},
 	}
+	created := false
 
-	if err := store.DB.Save(&meta).Error; err != nil {
-		return nil, err
+	err = store.DB.Transaction(func(tx *gorm.DB) error {
+		var existing model.DomainMeta
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("domain = ?", domain).First(&existing).Error
+		switch {
+		case err == nil:
+			return tx.Model(&existing).Updates(map[string]any{
+				"readme": readme,
+				"schema": meta.Schema,
+			}).Error
+		case err != gorm.ErrRecordNotFound:
+			return err
+		}
+
+		created = true
+		if err := tx.Create(&meta).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.DomainMember{
+			Domain: domain,
+			UserID: creatorID,
+			Role:   "host",
+		}).Error
+	})
+	if err != nil {
+		return nil, false, err
 	}
-	return &meta, nil
+	if !created {
+		if err := store.DB.Where("domain = ?", domain).First(&meta).Error; err != nil {
+			return nil, false, err
+		}
+	}
+	return &meta, created, nil
 }
 
 // ValidateFrontmatter 按 domain schema 校验 concept 的 frontmatter

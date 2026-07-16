@@ -1,6 +1,6 @@
 ---
 name: okp-import
-version: 1.5.0
+version: 1.6.0
 description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领域 owner 的 agent：读 domain README → 查重 → 蒸馏 → 校验 → 写入。"
 metadata:
   requires:
@@ -17,14 +17,28 @@ npm install -g @markbangwu/okp
 okp domains    # 确认 API 可达
 ```
 
-## 写权限（先确认再导入）
+## 权限模型
 
-写入 concept / 更新 domain README 需要其一：
+`admin > host > writer > reader`
 
-- 全局 `admin`
-- 该 domain 的 `host` 或 `writer`
+- **admin**：全局管理员，可读写任意 domain，无需加入成员表。
+- **host**：每个 domain 有且只有一个 host，由 domain 创建者自动获得。负责管理 domain README、成员和邀请码。host 不可转让。
+- **writer**：domain 写入者。可通过 invitation 获得。可写入概念，不能管理成员和邀请码。
+- **reader**：所有已认证用户的默认权限。可读取全部 domain，无需加入成员表。
 
-公开 domain 默认所有人可读，**不代表可写**。
+**所有 domain 均开放读取，没有私有 domain 这个概念。**
+
+### 新建 domain → 自动成为 host
+
+写 README 即创建 domain，创建者自动成为该 domain 唯一 host：
+
+```bash
+okp domain <domain> --set readme.md
+```
+
+返回 201 即创建成功，创建者已持有 host 角色。
+
+### 获得 writer 权限
 
 若 `put` / `batch` / `domain --set` 返回 403（write access denied）：
 
@@ -41,9 +55,8 @@ okp domains    # 确认 API 可达
    okp invite members <domain>
    ```
 
+邀请码只能授予 `writer`，不能获得 `host` 或 `admin`。
 邀请码是短码，不是链接路由。门户右上角「邀请」也可输入同一邀请码。
-
-不要通过 invite 授予 `host`；host 转移是独立流程。
 
 ## 工作流（严格按顺序）
 
@@ -126,7 +139,7 @@ okp search "<title>" --domain <domain> --type <type>
   },
   "provenance": {
     "source": "feishu-sync",
-    "agent": "okp-import/1.5",
+    "agent": "okp-import/1.6",
     "raw_ref": "https://..."
   }
 }
@@ -153,7 +166,7 @@ okp batch concepts.ndjson
 
 | 状态 | 含义 | 处理 |
 |---|---|---|
-| 403 | 无 domain 写权限 | `okp invite accept <code>` 或联系 host |
+| 403 | 无 domain 写权限 | 联系 host/admin 生成邀请码，再 `okp invite accept <code>` |
 | 422 | frontmatter/校验失败 | 按 `fix` 补字段或改写 |
 | 401 | token 无效/过期 | 检查 `OKP_API_TOKEN` / sandbox execution token |
 
@@ -186,7 +199,7 @@ okp get <id>                               # 确认单条完整
 | 字段 | 说明 |
 |---|---|
 | `source` | 数据来源，如 `feishu-sync`、`manual`、`fandom-crawl` |
-| `agent` | 写入方，如 `okp-import/1.5` |
+| `agent` | 写入方，如 `okp-import/1.6` |
 | `raw_ref` | 原始数据 URL 或路径 |
 
 ## 邀请相关 CLI（host/admin）
@@ -201,11 +214,10 @@ okp invite members <domain>
 
 - create 时明文 code 只显示一次
 - list 不返回明文 code
-- 当前阶段公开 domain 邀请角色为 `writer`
+- 邀请角色固定为 `writer`
 
 ## 不在本 skill 范围
 
 - 知识搜索 → okp-search
 - domain README 维护之外的门户 UI 操作
 - 数据爬取 → 各 domain 自己的数据管道
-- 私有 domain / reader 邀请（尚未开放）

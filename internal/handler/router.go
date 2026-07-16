@@ -484,13 +484,26 @@ func putDomainMeta(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "readme 不能为空")
 		return
 	}
-	meta, err := service.PutDomainMeta(domain, body.Readme)
+
+	userID := auth.UserIDFromContext(r)
+	var existing model.DomainMeta
+	domainExists := store.DB.Select("domain").Where("domain = ?", domain).First(&existing).Error == nil
+	if domainExists && !auth.CanWriteDomain(userID, domain) {
+		writeError(w, http.StatusForbidden, "write access denied: requires admin or domain host/writer")
+		return
+	}
+
+	meta, created, err := service.PutDomainMeta(domain, body.Readme, userID)
 	if err != nil {
-		slog.Error("domain meta 写入失败", "domain", domain, "error", err)
+		slog.Error("domain meta 写入失败", "domain", domain, "user_id", userID, "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, meta)
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, meta)
 }
 
 // GET /api/v1/concepts/sample

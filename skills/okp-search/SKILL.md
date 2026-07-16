@@ -1,6 +1,6 @@
 ---
 name: okp-search
-version: 1.5.0
+version: 1.6.0
 description: "在 Open Knowledge Pool 中搜索和导航知识。面向消费 agent：先读 domain README → 按 schema 精确过滤/搜索 → light list → 精读少数 → 沿 links 导航。"
 metadata:
   requires:
@@ -25,8 +25,7 @@ okp domains   # 确认 API 可达
 
 ## 读权限
 
-当前默认：**已认证用户可读公开 domain**。  
-搜索/浏览不要求 domain `writer`。  
+所有已认证用户均可读取全部 domain，无需加入成员表。搜索/浏览不要求任何 domain 角色。
 写入权限见 okp-import；本 skill 只读。
 
 ## 检索循环（严格按此顺序）

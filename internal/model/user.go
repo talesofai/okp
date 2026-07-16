@@ -17,9 +17,9 @@ type User struct {
 }
 
 // DomainMember 记录用户在某个 domain 的角色。
-// host: 管理 domain（README/schema/成员管理），可写 concept
+// host: 每个 domain 唯一，由 domain 创建者持有；管理 domain 并可写 concept
 // writer: 可写 concept
-// reader: 显式 reader（默认所有人都是 reader，此记录用于显式授权 host/writer）
+// reader: 所有认证用户的默认权限，不需要成员记录
 type DomainMember struct {
 	Domain    string    `gorm:"primaryKey;type:text" json:"domain"`
 	UserID    string    `gorm:"primaryKey;type:text" json:"user_id"`
