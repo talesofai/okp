@@ -114,7 +114,7 @@ function InviteButton() {
           >
             <Text weight="medium">接受邀请</Text>
             <Text size="sm" color="secondary">
-              输入 host 发给你的邀请码。Work 链接固定为本站，无需额外路由。
+              把朋友发给你的邀请码粘贴到下面，确认后就能加入对应知识领域。
             </Text>
             <form
               style={{ display: "flex", gap: 8, flexWrap: "wrap" }}

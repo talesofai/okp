@@ -213,7 +213,7 @@ function DomainPage() {
             <div>
               <Text weight="medium">邀请成员</Text>
               <Text size="sm" color="secondary">
-                生成 writer 邀请码（默认 72 小时、一次性）。对方打开固定 Work 链接后在首页输入邀请码。
+                生成写入权限邀请码（默认 72 小时、一次有效）。把邀请码发给对方，让对方点右上角「邀请」输入即可。
               </Text>
             </div>
             <Button

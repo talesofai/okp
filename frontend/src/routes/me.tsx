@@ -142,7 +142,7 @@ function MePage() {
             <Text size="sm">默认公开只读；私有 domain 需显式授权</Text>
           </div>
           <Text size="sm" color="secondary" style={{ marginTop: 8 }}>
-            获得 writer 权限：请 host 生成邀请码，在首页「接受邀请」输入。
+            需要写入权限时，让领域管理员生成邀请码，再点右上角「邀请」输入。
           </Text>
         </div>
       </Surface>
