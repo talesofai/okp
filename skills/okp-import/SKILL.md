@@ -13,11 +13,9 @@ metadata:
 **CRITICAL — 开始前 MUST 确认 okp CLI 已安装并可连接 API：**
 
 ```bash
-npm install -g @markbangwu/okp@1.1.1
+npm install -g @markbangwu/okp
 okp domains    # 确认 API 可达
 ```
-
-当前推荐 CLI：`@markbangwu/okp@1.1.1`（含 `okp invite`）。
 
 ## 写权限（先确认再导入）
 
