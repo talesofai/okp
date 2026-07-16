@@ -139,12 +139,14 @@ type workSessionPayload struct {
 func validateWorkSessionToken(token string, key string) (userUUID string, ok bool) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
+		slog.Warn("work_session: not 3 parts", "parts", len(parts))
 		return "", false
 	}
 
 	signingInput := parts[0] + "." + parts[1]
 	providedSig, err := b64Decode(parts[2])
 	if err != nil {
+		slog.Warn("work_session: sig b64decode failed", "error", err)
 		return "", false
 	}
 
@@ -153,6 +155,7 @@ func validateWorkSessionToken(token string, key string) (userUUID string, ok boo
 	expectedSig := mac.Sum(nil)
 
 	if subtle.ConstantTimeCompare(providedSig, expectedSig) != 1 {
+		slog.Warn("work_session: HMAC mismatch", "keyLen", len(key))
 		return "", false
 	}
 
@@ -166,12 +169,15 @@ func validateWorkSessionToken(token string, key string) (userUUID string, ok boo
 	}
 
 	if payload.Typ != "work_session" {
+		slog.Warn("work_session: wrong typ", "typ", payload.Typ)
 		return "", false
 	}
 	if payload.Exp <= time.Now().Unix() {
+		slog.Warn("work_session: expired", "exp", payload.Exp, "now", time.Now().Unix())
 		return "", false
 	}
 	if payload.UserUUID == "" {
+		slog.Warn("work_session: empty userUuid")
 		return "", false
 	}
 
