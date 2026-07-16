@@ -1,16 +1,23 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { viteSingleFile } from 'vite-plugin-singlefile'
-import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 
-// https://vite.dev/config/
+// Cohub directory Works serve assets under a nested snapshot path.
+// Relative base keeps JS/CSS/chunk URLs valid after publish.
 export default defineConfig({
-  server: {
-    allowedHosts: ['.cohub.run'],
-  },
+  base: "./",
   plugins: [
-    viteSingleFile(),
-    TanStackRouterVite({ target: 'react', autoCodeSplitting: true }),
+    TanStackRouterVite({ target: "react", autoCodeSplitting: true }),
     react(),
   ],
-})
+  build: {
+    outDir: "dist",
+    assetsDir: "assets",
+    sourcemap: true,
+  },
+  server: {
+    host: "0.0.0.0",
+    port: 5173,
+    allowedHosts: [".cohub.run"],
+  },
+});

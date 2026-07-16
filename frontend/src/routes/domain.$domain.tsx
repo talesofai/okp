@@ -1,16 +1,17 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
-import { api, type Concept } from '../api/client'
-import { Text, Badge, Surface, Loader, Empty, Button } from '@cloudflare/kumo'
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useApi, type Concept } from "../api/client";
+import { Text, Badge, Surface, Empty, Button } from "@cloudflare/kumo";
 
-export const Route = createFileRoute('/domain/$domain')({
+export const Route = createFileRoute("/domain/$domain")({
   component: DomainPage,
 })
 
 const PAGE_SIZE = 50
 
 function DomainPage() {
+  const api = useApi();
   const { domain } = Route.useParams()
   const [offset, setOffset] = useState(0)
 
@@ -21,13 +22,15 @@ function DomainPage() {
 
   return (
     <div>
-      <a href="/" style={{ textDecoration: 'none', marginBottom: 16, display: 'inline-block' }}>
+      <Link to="/" style={{ textDecoration: "none", marginBottom: 16, display: "inline-block" }}>
         <Text size="sm" color="secondary">← 返回</Text>
-      </a>
+      </Link>
       <Text size="xl" weight="bold" as="h1" style={{ marginBottom: 24 }}>{domain}</Text>
 
       {isLoading && (
-        <div style={{ textAlign: 'center', padding: 48 }}><Loader /></div>
+        <div style={{ textAlign: 'center', padding: 48 }}>
+          <Text color="secondary">loading…</Text>
+        </div>
       )}
 
       {concepts && concepts.length === 0 && !isLoading && (
@@ -38,11 +41,11 @@ function DomainPage() {
         <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {concepts.map((c: Concept) => (
-              <a key={c.id} href={`/concept/${c.id}`} style={{ textDecoration: 'none' }}>
+              <Link key={c.id} to="/concept/$" params={{ _splat: c.id }} style={{ textDecoration: "none" }}>
                 <Surface style={{
-                  padding: '16px 20px',
-                  cursor: 'pointer',
-                  transition: 'border-color 0.15s',
+                  padding: "16px 20px",
+                  cursor: "pointer",
+                  transition: "border-color 0.15s",
                 }}>
                   <Text size="xs" color="secondary" style={{ marginBottom: 4 }}>
                     {c.type}
@@ -51,9 +54,9 @@ function DomainPage() {
                   {c.description && (
                     <Text size="sm" color="secondary" style={{
                       marginTop: 4,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
                     }}>
                       {c.description.slice(0, 150)}
                     </Text>
@@ -66,7 +69,7 @@ function DomainPage() {
                     </div>
                   )}
                 </Surface>
-              </a>
+              </Link>
             ))}
           </div>
 
