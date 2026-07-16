@@ -2,7 +2,6 @@ import {
   createContext,
   useContext,
   useEffect,
-  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -18,12 +17,22 @@ export type BootStatus = "booting" | "ready" | "error";
 
 type CohubClient = ReturnType<typeof createCohubClient>;
 
+export interface CohubUser {
+  uuid: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  email: string | null;
+}
+
 export interface RuntimeState {
   status: BootStatus;
   client: CohubClient | null;
   context: WorkRuntimeContext | null;
   /** WorkRuntimeApi.getAccessToken() — returns the Cohub work_session JWT. */
   getToken: (() => Promise<string | null>) | null;
+  /** Cohub user profile from client.user.getMe(). */
+  user: CohubUser | null;
   error: string | null;
 }
 
@@ -39,6 +48,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     client: null,
     context: null,
     getToken: null,
+    user: null,
     error: null,
   });
 
@@ -62,6 +72,21 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           workRuntime = createWorkRuntime(transport, workId);
         }
 
+        let user: CohubUser | null = null;
+        try {
+          const me = await client.user.getMe();
+          user = {
+            uuid: me.uuid,
+            username: me.profile?.username ?? null,
+            displayName: me.profile?.displayName ?? null,
+            avatarUrl: me.profile?.avatarUrl ?? null,
+            email: me.email ?? null,
+          };
+        } catch {
+          // getMe may fail outside Work runtime; that's OK
+        }
+
+        if (cancelled) return;
         setState({
           status: "ready",
           client,
@@ -69,6 +94,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           getToken: workRuntime
             ? () => workRuntime!.getAccessToken()
             : null,
+          user,
           error: null,
         });
       } catch (e) {
@@ -78,6 +104,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           client: null,
           context: null,
           getToken: null,
+          user: null,
           error: toMessage(e),
         });
       }
@@ -105,10 +132,6 @@ export function useWorkContext(): WorkRuntimeContext | null {
   return useRuntime().context;
 }
 
-/**
- * Returns a function that fetches the Cohub work token for OKP API calls.
- * Returns null if the runtime hasn't booted or has no work context.
- */
-export function useGetToken(): (() => Promise<string | null>) | null {
-  return useRuntime().getToken;
+export function useCohubUser(): CohubUser | null {
+  return useRuntime().user;
 }

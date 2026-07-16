@@ -282,9 +282,8 @@ func upsertUser(userID, authType string) {
 	}
 }
 
-// canWrite checks the user's role from the database.
-// Only users with role="writer" can perform write operations.
-func canWrite(userID string) bool {
+// isAdmin checks if the user has global admin role.
+func isAdmin(userID string) bool {
 	if userID == "" || store.DB == nil {
 		return false
 	}
@@ -292,7 +291,51 @@ func canWrite(userID string) bool {
 	if err := store.DB.Where("uuid = ?", userID).First(&user).Error; err != nil {
 		return false
 	}
-	return user.Role == "writer"
+	return user.Role == "admin"
+}
+
+// CanWriteDomain checks if the user can write to a specific domain.
+// Returns true if user is admin, or is host/writer of the domain.
+func CanWriteDomain(userID, domain string) bool {
+	if userID == "" || store.DB == nil {
+		return false
+	}
+	// admin can write anywhere
+	if isAdmin(userID) {
+		return true
+	}
+	// check domain membership
+	var member model.DomainMember
+	if err := store.DB.Where("domain = ? AND user_id = ?", domain, userID).First(&member).Error; err != nil {
+		return false
+	}
+	return member.Role == "host" || member.Role == "writer"
+}
+
+// ResolveDomainRole returns the user's role for a domain.
+// Returns "admin" for global admins, otherwise the domain_members role, defaulting to "reader".
+func ResolveDomainRole(userID, domain string) string {
+	if userID == "" || store.DB == nil {
+		return "reader"
+	}
+	if isAdmin(userID) {
+		return "admin"
+	}
+	var member model.DomainMember
+	if err := store.DB.Where("domain = ? AND user_id = ?", domain, userID).First(&member).Error; err != nil {
+		return "reader"
+	}
+	return member.Role
+}
+
+// GetUserDomains returns all domain memberships for a user.
+func GetUserDomains(userID string) []model.DomainMember {
+	if userID == "" || store.DB == nil {
+		return nil
+	}
+	var members []model.DomainMember
+	store.DB.Where("user_id = ?", userID).Find(&members)
+	return members
 }
 
 // ── Middleware ──────────────────────────────────────────────
@@ -366,9 +409,9 @@ func Auth(next http.Handler) http.Handler {
 		// 记录用户
 		upsertUser(userID, authType)
 
-		// 写操作需要 writer 角色（admin 路由除外）
-		if isWriteMethod(r.Method) && !isAdminRoute(r.URL.Path) && !canWrite(userID) {
-			http.Error(w, `{"error":"write access denied: role 'writer' required"}`, http.StatusForbidden)
+		// admin 路由仅限静态 API token
+		if isAdminRoute(r.URL.Path) && authType != "token" {
+			http.Error(w, `{"error":"admin endpoints require OKP_API_TOKEN"}`, http.StatusForbidden)
 			return
 		}
 

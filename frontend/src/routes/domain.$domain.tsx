@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useApi, type Concept } from "../api/client";
 import { Text, Badge, Surface, Empty, Button } from "@cloudflare/kumo";
 
+declare const marked: { parse: (md: string) => string };
+
 export const Route = createFileRoute("/domain/$domain")({
   component: DomainPage,
 })
@@ -14,18 +16,54 @@ function DomainPage() {
   const api = useApi();
   const { domain } = Route.useParams()
   const [offset, setOffset] = useState(0)
+  const [showReadme, setShowReadme] = useState(false)
 
   const { data: concepts, isLoading } = useQuery({
     queryKey: ['domain', domain, offset],
     queryFn: () => api.search({ domain, limit: PAGE_SIZE, offset }),
   })
 
+  const { data: meta } = useQuery({
+    queryKey: ['domain-meta', domain],
+    queryFn: () => api.getDomainReadme(domain),
+    retry: false,
+  })
+
+  const hasReadme = meta?.readme && meta.readme.trim().length > 0
+
   return (
     <div>
       <Link to="/" style={{ textDecoration: "none", marginBottom: 16, display: "inline-block" }}>
         <Text size="sm" color="secondary">← 返回</Text>
       </Link>
-      <Text size="xl" weight="bold" as="h1" style={{ marginBottom: 24 }}>{domain}</Text>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <Text size="xl" weight="bold" as="h1">{domain}</Text>
+        {concepts && (
+          <Badge variant="info">{concepts.length} concepts on this page</Badge>
+        )}
+        {hasReadme && (
+          <Button variant="outline" onClick={() => setShowReadme(!showReadme)}>
+            {showReadme ? '隐藏 README' : '查看 README'}
+          </Button>
+        )}
+      </div>
+
+      {showReadme && hasReadme && (
+        <Surface style={{ padding: 24, marginBottom: 24, maxHeight: 400, overflow: 'auto' }}>
+          <div
+            className="markdown-body"
+            style={{ lineHeight: 1.7 }}
+            ref={(el) => {
+              if (el && meta?.readme) {
+                el.innerHTML = typeof marked !== 'undefined'
+                  ? marked.parse(meta.readme)
+                  : `<pre>${meta.readme}</pre>`
+              }
+            }}
+          />
+        </Surface>
+      )}
 
       {isLoading && (
         <div style={{ textAlign: 'center', padding: 48 }}>

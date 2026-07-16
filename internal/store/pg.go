@@ -66,6 +66,7 @@ func Init() {
 		&model.Revision{},
 		&model.User{},
 		&model.DomainMeta{},
+		&model.DomainMember{},
 	); err != nil {
 		slog.Error("数据库迁移失败", "error", err)
 		panic(err)
@@ -113,4 +114,15 @@ func Init() {
 	}
 
 	slog.Info("数据库迁移完成")
+
+	// 迁移旧角色：writer → admin
+	if err := DB.Model(&model.User{}).Where("role = ?", "writer").Update("role", "admin").Error; err != nil {
+		slog.Warn("迁移 writer→admin 失败", "error", err)
+	} else {
+		var migrated int64
+		DB.Model(&model.User{}).Where("role = ?", "admin").Count(&migrated)
+		if migrated > 0 {
+			slog.Info("已迁移 writer→admin", "count", migrated)
+		}
+	}
 }

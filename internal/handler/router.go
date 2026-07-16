@@ -113,6 +113,15 @@ func upsertConcept(w http.ResponseWriter, r *http.Request) {
 	}
 	c.ID = id
 
+	if c.Domain == "" {
+		writeError(w, http.StatusBadRequest, "domain 不能为空")
+		return
+	}
+	if !auth.CanWriteDomain(auth.UserIDFromContext(r), c.Domain) {
+		writeError(w, http.StatusForbidden, "write access denied: requires admin or domain host/writer")
+		return
+	}
+
 	result, validationErrs, err := service.PutConcept(&c)
 	if err != nil {
 		slog.Error("upsert 失败", "id", id, "error", err)
@@ -135,6 +144,23 @@ func batchUpsert(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&concepts); err != nil {
 		writeError(w, http.StatusBadRequest, "请求体 JSON 解析失败: "+err.Error())
 		return
+	}
+
+	// Check write permission for all domains in the batch
+	userID := auth.UserIDFromContext(r)
+	seen := map[string]bool{}
+	for _, c := range concepts {
+		if c.Domain == "" {
+			writeError(w, http.StatusBadRequest, "concept domain 不能为空: "+c.ID)
+			return
+		}
+		if !seen[c.Domain] {
+			seen[c.Domain] = true
+			if !auth.CanWriteDomain(userID, c.Domain) {
+				writeError(w, http.StatusForbidden, "write access denied for domain: "+c.Domain)
+				return
+			}
+		}
 	}
 
 	results := service.BatchPutConcepts(concepts)

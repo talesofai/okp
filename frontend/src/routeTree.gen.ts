@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as MeRouteImport } from './routes/me'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DomainDomainRouteImport } from './routes/domain.$domain'
 import { Route as ConceptSplatRouteImport } from './routes/concept.$'
@@ -17,6 +18,11 @@ import { Route as ConceptSplatRouteImport } from './routes/concept.$'
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MeRoute = MeRouteImport.update({
+  id: '/me',
+  path: '/me',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -37,12 +43,14 @@ const ConceptSplatRoute = ConceptSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/me': typeof MeRoute
   '/search': typeof SearchRoute
   '/concept/$': typeof ConceptSplatRoute
   '/domain/$domain': typeof DomainDomainRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/me': typeof MeRoute
   '/search': typeof SearchRoute
   '/concept/$': typeof ConceptSplatRoute
   '/domain/$domain': typeof DomainDomainRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/me': typeof MeRoute
   '/search': typeof SearchRoute
   '/concept/$': typeof ConceptSplatRoute
   '/domain/$domain': typeof DomainDomainRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/search' | '/concept/$' | '/domain/$domain'
+  fullPaths: '/' | '/me' | '/search' | '/concept/$' | '/domain/$domain'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/search' | '/concept/$' | '/domain/$domain'
-  id: '__root__' | '/' | '/search' | '/concept/$' | '/domain/$domain'
+  to: '/' | '/me' | '/search' | '/concept/$' | '/domain/$domain'
+  id: '__root__' | '/' | '/me' | '/search' | '/concept/$' | '/domain/$domain'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  MeRoute: typeof MeRoute
   SearchRoute: typeof SearchRoute
   ConceptSplatRoute: typeof ConceptSplatRoute
   DomainDomainRoute: typeof DomainDomainRoute
@@ -76,6 +86,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/search'
       preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/me': {
+      id: '/me'
+      path: '/me'
+      fullPath: '/me'
+      preLoaderRoute: typeof MeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -104,6 +121,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  MeRoute: MeRoute,
   SearchRoute: SearchRoute,
   ConceptSplatRoute: ConceptSplatRoute,
   DomainDomainRoute: DomainDomainRoute,

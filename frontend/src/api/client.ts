@@ -57,6 +57,8 @@ export function useApi() {
 
   return useMemo(
     () => ({
+      me: () => fetchOkp<MeResponse>("/api/v1/me", getToken),
+
       domains: () => fetchOkp<Domain[]>("/api/v1/domains", getToken),
 
       search: (params: {
@@ -80,7 +82,7 @@ export function useApi() {
 
       getConcept: (id: string) =>
         fetchOkp<Concept>(
-          `/api/v1/concepts/${encodeURIComponent(id)}`,
+          `/api/v1/concepts/${id.split("/").map(encodeURIComponent).join("/")}`,
           getToken,
         ),
 
@@ -92,7 +94,7 @@ export function useApi() {
 
       getLinks: (id: string) =>
         fetchOkp<{ outgoing: unknown[]; backlinks: unknown[] }>(
-          `/api/v1/links/${encodeURIComponent(id)}`,
+          `/api/v1/links/${id.split("/").map(encodeURIComponent).join("/")}`,
           getToken,
         ),
     }),
