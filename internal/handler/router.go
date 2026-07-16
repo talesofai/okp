@@ -63,6 +63,7 @@ func NewRouter() http.Handler {
 	r.Post("/api/v1/embed/batch", embedBatch)
 	r.Get("/api/v1/health", healthCheck)
 	r.Get("/api/v1/me", meHandler)
+	r.Put("/api/v1/me/profile", updateMyProfile)
 
 	// Domain members & invite codes
 	r.Get("/api/v1/domains/{domain}/members", listDomainMembers)
@@ -109,13 +110,45 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"uuid":       user.UUID,
-		"auth_type":  authType,
-		"role":       user.Role,
-		"last_seen":  user.LastSeen,
-		"created_at": user.CreatedAt,
-		"domains":    auth.GetUserDomains(userID),
+		"uuid":         user.UUID,
+		"auth_type":    authType,
+		"role":         user.Role,
+		"username":     user.Username,
+		"display_name": user.DisplayName,
+		"avatar_url":   user.AvatarURL,
+		"last_seen":    user.LastSeen,
+		"created_at":   user.CreatedAt,
+		"domains":      auth.GetUserDomains(userID),
 	})
+}
+
+// PUT /api/v1/me/profile
+// Body: {"username": "...", "display_name": "...", "avatar_url": "..."}
+func updateMyProfile(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserIDFromContext(r)
+
+	var body struct {
+		Username    string `json:"username"`
+		DisplayName string `json:"display_name"`
+		AvatarURL   string `json:"avatar_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	updates := map[string]any{
+		"username":     body.Username,
+		"display_name":  body.DisplayName,
+		"avatar_url":    body.AvatarURL,
+	}
+	if err := store.DB.Model(&model.User{}).Where("uuid = ?", userID).Updates(updates).Error; err != nil {
+		slog.Error("update profile failed", "uuid", userID, "error", err)
+		writeError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
 // PUT /api/v1/concepts/{id}
@@ -461,13 +494,24 @@ func embedBatch(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/domains/{domain}/members
 func listDomainMembers(w http.ResponseWriter, r *http.Request) {
 	domain := chi.URLParam(r, "domain")
-	userRole := auth.ResolveDomainRole(auth.UserIDFromContext(r), domain)
-	if userRole != "admin" && userRole != "host" {
-		writeError(w, http.StatusForbidden, "only admin or host can view members")
-		return
+	type memberResponse struct {
+		Domain      string    `json:"domain"`
+		UserID      string    `json:"user_id"`
+		Role        string    `json:"role"`
+		Username    string    `json:"username"`
+		DisplayName string    `json:"display_name"`
+		AvatarURL   string    `json:"avatar_url"`
+		CreatedAt   time.Time `json:"created_at"`
+		UpdatedAt   time.Time `json:"updated_at"`
 	}
-	var members []model.DomainMember
-	if err := store.DB.Where("domain = ?", domain).Order("created_at asc").Find(&members).Error; err != nil {
+
+	var members []memberResponse
+	if err := store.DB.Table("domain_members").
+		Select("domain_members.domain, domain_members.user_id, domain_members.role, domain_members.created_at, domain_members.updated_at, COALESCE(users.username, '') AS username, COALESCE(users.display_name, '') AS display_name, COALESCE(users.avatar_url, '') AS avatar_url").
+		Joins("LEFT JOIN users ON users.uuid = domain_members.user_id").
+		Where("domain_members.domain = ?", domain).
+		Order("domain_members.created_at asc").
+		Scan(&members).Error; err != nil {
 		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}

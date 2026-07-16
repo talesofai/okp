@@ -47,6 +47,7 @@ func main() {
 	rootCmd.AddCommand(cmdDomains())
 	rootCmd.AddCommand(cmdDomain())
 	rootCmd.AddCommand(cmdSample())
+	rootCmd.AddCommand(cmdInvite())
 	rootCmd.AddCommand(cmdAuth())
 	rootCmd.AddCommand(cmdUpdate())
 

@@ -452,3 +452,149 @@ func cmdSample() *cobra.Command {
 	return cmd
 }
 
+func cmdInvite() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "invite",
+		Short: "domain 邀请码管理（host/admin）",
+		Long: `管理 domain writer 邀请码。
+
+创建后只显示一次明文 code；对方打开固定 Work 链接后输入邀请码。
+不依赖 Work 路由。`,
+	}
+
+	// okp invite create <domain>
+	var expiresHours, maxUses int
+	var role string
+	createCmd := &cobra.Command{
+		Use:   "create <domain>",
+		Short: "创建 writer 邀请码",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			domain := args[0]
+			body := map[string]any{
+				"role":             role,
+				"expires_in_hours": expiresHours,
+				"max_uses":         maxUses,
+			}
+			resp, err := doRequest("POST", "/api/v1/domains/"+url.PathEscape(domain)+"/invites", body)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var result map[string]any
+			if err := readJSON(resp, &result); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return nil
+			}
+			if code, ok := result["code"].(string); ok {
+				fmt.Fprintf(os.Stderr, "邀请码（只显示一次）: %s\n", code)
+			}
+			if share, ok := result["share_text"].(string); ok && share != "" {
+				fmt.Fprintln(os.Stderr, "---")
+				fmt.Fprintln(os.Stderr, share)
+				fmt.Fprintln(os.Stderr, "---")
+			}
+			prettyPrint(result)
+			return nil
+		},
+	}
+	createCmd.Flags().StringVar(&role, "role", "writer", "邀请角色（当前仅支持 writer）")
+	createCmd.Flags().IntVar(&expiresHours, "expires-hours", 72, "过期小时数")
+	createCmd.Flags().IntVar(&maxUses, "max-uses", 1, "最大使用次数")
+	cmd.AddCommand(createCmd)
+
+	// okp invite list <domain>
+	listCmd := &cobra.Command{
+		Use:   "list <domain>",
+		Short: "列出 domain 邀请码（不含明文 code）",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			domain := args[0]
+			resp, err := doRequest("GET", "/api/v1/domains/"+url.PathEscape(domain)+"/invites", nil)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var result []map[string]any
+			if err := readJSON(resp, &result); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return nil
+			}
+			fmt.Fprintf(os.Stderr, "共 %d 条邀请\n", len(result))
+			prettyPrint(result)
+			return nil
+		},
+	}
+	cmd.AddCommand(listCmd)
+
+	// okp invite revoke <domain> <id>
+	revokeCmd := &cobra.Command{
+		Use:   "revoke <domain> <invite-id>",
+		Short: "撤销邀请码",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			domain, id := args[0], args[1]
+			path := "/api/v1/domains/" + url.PathEscape(domain) + "/invites/" + url.PathEscape(id)
+			resp, err := doRequest("DELETE", path, nil)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var result map[string]any
+			if err := readJSON(resp, &result); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return nil
+			}
+			prettyPrint(result)
+			return nil
+		},
+	}
+	cmd.AddCommand(revokeCmd)
+
+	// okp invite accept <code>
+	acceptCmd := &cobra.Command{
+		Use:   "accept <code>",
+		Short: "接受邀请码（当前认证用户）",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]any{"code": args[0]}
+			resp, err := doRequest("POST", "/api/v1/invites/accept", body)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var result map[string]any
+			if err := readJSON(resp, &result); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return nil
+			}
+			if domain, ok := result["domain"].(string); ok {
+				fmt.Fprintf(os.Stderr, "✅ 已加入 domain %s\n", domain)
+			}
+			prettyPrint(result)
+			return nil
+		},
+	}
+	cmd.AddCommand(acceptCmd)
+
+	// okp invite members <domain>
+	membersCmd := &cobra.Command{
+		Use:   "members <domain>",
+		Short: "列出 domain 成员（host/admin）",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			domain := args[0]
+			resp, err := doRequest("GET", "/api/v1/domains/"+url.PathEscape(domain)+"/members", nil)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var result []map[string]any
+			if err := readJSON(resp, &result); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return nil
+			}
+			prettyPrint(result)
+			return nil
+		},
+	}
+	cmd.AddCommand(membersCmd)
+
+	return cmd
+}
+

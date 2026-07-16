@@ -30,6 +30,9 @@ export interface DomainMembership {
   domain: string;
   user_id: string;
   role: string;
+  username?: string;
+  display_name?: string;
+  avatar_url?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -38,6 +41,9 @@ export interface MeResponse {
   uuid: string;
   auth_type?: string;
   role?: string;
+  username?: string;
+  display_name?: string;
+  avatar_url?: string;
   last_seen?: string;
   created_at?: string;
   domains?: DomainMembership[];
@@ -103,6 +109,15 @@ export function useApi() {
   return useMemo(
     () => ({
       me: () => fetchOkp<MeResponse>("/api/v1/me", getToken),
+
+      updateMyProfile: (profile: {
+        username: string;
+        display_name: string;
+        avatar_url: string;
+      }) => fetchOkp<{ status: string }>("/api/v1/me/profile", getToken, {
+        method: "PUT",
+        body: JSON.stringify(profile),
+      }),
 
       domains: () => fetchOkp<Domain[]>("/api/v1/domains", getToken),
 

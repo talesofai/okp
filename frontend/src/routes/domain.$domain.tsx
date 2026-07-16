@@ -65,6 +65,12 @@ function DomainPage() {
     retry: false,
   })
 
+  const { data: members } = useQuery({
+    queryKey: ['domain-members', domain],
+    queryFn: () => api.listMembers(domain),
+    retry: false,
+  })
+
   const { data: me } = useQuery({
     queryKey: ['me'],
     queryFn: api.me,
@@ -151,6 +157,53 @@ function DomainPage() {
             style={{ lineHeight: 1.7, fontSize: 14 }}
             dangerouslySetInnerHTML={{ __html: readmeHtml }}
           />
+        </Surface>
+      )}
+
+      {/* Domain members — host and writers */}
+      {members && members.length > 0 && (
+        <Surface style={{ padding: "16px 20px", marginBottom: 24 }}>
+          <Text size="sm" color="secondary" style={{ marginBottom: 12 }}>成员</Text>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {members
+              .filter((m) => m.role === 'host' || m.role === 'writer')
+              .map((m) => {
+                const name = m.display_name || m.username || `${m.user_id.slice(0, 8)}…`
+                return (
+                  <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {m.avatar_url ? (
+                      <img
+                        src={m.avatar_url}
+                        alt={name}
+                        style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: '#6366f1', color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11,
+                      }}>
+                        {name.slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                    <div style={{ minWidth: 0 }}>
+                      <Text size="sm">{name}</Text>
+                      {m.username && m.display_name && (
+                        <Text size="xs" color="secondary">@{m.username}</Text>
+                      )}
+                    </div>
+                    <span style={{
+                      fontSize: 10, padding: '2px 8px', borderRadius: 4,
+                      background: m.role === 'host' ? '#10b981' : '#6b7280',
+                      color: '#fff',
+                    }}>
+                      {m.role}
+                    </span>
+                  </div>
+                )
+              })}
+          </div>
         </Surface>
       )}
 
