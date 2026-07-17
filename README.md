@@ -1,10 +1,10 @@
 <p align="center">
   <a href="https://neta.art">
-    <img src="https://neta.art/favicon.svg" alt="Neta.art" width="32" height="32" />
+    <img src="docs/assets/neta.png" alt="Neta.art" width="48" height="48" />
   </a>
-  <span style="margin: 0 16px; font-size: 24px; font-weight: bold; color: #6b7280;">/</span>
+  &nbsp;&nbsp;&nbsp;
   <a href="https://cohub.run">
-    <img src="https://cohub.run/favicon.ico" alt="Cohub" width="32" height="32" />
+    <img src="docs/assets/cohub.png" alt="Cohub" width="48" height="48" />
   </a>
 </p>
 
