@@ -11,6 +11,7 @@ on:
         required: false
         type: string
 
+# Trusted Publishing (OIDC) requires id-token: write and must NOT inject NODE_AUTH_TOKEN.
 permissions:
   contents: read
   id-token: write
@@ -26,10 +27,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Do NOT set registry-url here: it writes //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+      # and breaks npm Trusted Publishing OIDC (npm then returns E404 on PUT).
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          registry-url: "https://registry.npmjs.org"
+
+      - name: Ensure modern npm for OIDC provenance
+        run: npm install -g npm@latest
 
       - name: Resolve version
         id: version
@@ -53,5 +58,13 @@ jobs:
 
       - name: Build and publish
         env:
+          # Force OIDC trusted publishing; classic token auth must stay unset.
+          NODE_AUTH_TOKEN: ""
+          NPM_TOKEN: ""
           NPM_CONFIG_PROVENANCE: "true"
-        run: ./scripts/publish-cli.sh "${{ steps.version.outputs.version }}"
+        run: |
+          set -euo pipefail
+          # Remove any auth token lines that would force classic publish.
+          npm config delete //registry.npmjs.org/:_authToken || true
+          unset NODE_AUTH_TOKEN NPM_TOKEN || true
+          ./scripts/publish-cli.sh "${{ steps.version.outputs.version }}"

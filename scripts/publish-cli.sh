@@ -99,14 +99,35 @@ node -e "
   console.log('  main package.json updated');
 "
 
+# Prefer npm Trusted Publishing (OIDC). If a classic token is present, npm may
+# use it instead — clear empty placeholders that break OIDC.
+if [[ -z "${NODE_AUTH_TOKEN:-}" || "${NODE_AUTH_TOKEN}" == "XXXXX-XXXXX-XXXXX-XXXXX" ]]; then
+  unset NODE_AUTH_TOKEN || true
+fi
+if [[ -z "${NPM_TOKEN:-}" ]]; then
+  unset NPM_TOKEN || true
+fi
+npm config delete //registry.npmjs.org/:_authToken >/dev/null 2>&1 || true
+
+publish_one() {
+  local dir="$1"
+  # --access public for first publish of scoped packages; unscoped is public by default
+  if [[ -n "${NPM_TOKEN:-}${NODE_AUTH_TOKEN:-}" ]]; then
+    (cd "$dir" && npm publish --access public --provenance)
+  else
+    # OIDC trusted publishing path
+    (cd "$dir" && npm publish --access public --provenance)
+  fi
+}
+
 for PKG_SUFFIX in "${!PLATFORMS[@]}"; do
   PKG_DIR="$NPM_DIR/packages/okp-cli-$PKG_SUFFIX"
   echo "  publish okp-cli-$PKG_SUFFIX@$NEW_VERSION"
-  (cd "$PKG_DIR" && npm publish --access public --provenance)
+  publish_one "$PKG_DIR"
 done
 
 echo "  publish @markbangwu/okp@$NEW_VERSION"
-(cd "$NPM_DIR" && npm publish --access public --provenance)
+publish_one "$NPM_DIR"
 
 echo ""
 echo "Published @markbangwu/okp@$NEW_VERSION"
