@@ -119,16 +119,16 @@ npx skills add https://github.com/talesofai/okp \
 
 仓库使用 **GitHub Actions**：
 
-- `Deploy`：push 到 `main` 时构建镜像并部署到 K8s（secrets: `REGISTRY_TOKEN`, `KUBE_CONFIG`）
+- `Deploy`：push 到 `main` 时构建镜像并部署到 K8s（secrets: `REGISTRY_TOKEN`, `KUBE_CONFIG`；镜像仍推送到 `git.talesofai.com` registry）
+- 代码仓库只使用 GitHub：`https://github.com/talesofai/okp`（不再推送 Gitea）
 - `Publish CLI`：打 `v*` tag 或手动触发，用 npm Trusted Publishing 发布 `@markbangwu/okp`
 
 发布 CLI：
 
 ```bash
 # 推荐：打 tag 触发
-git tag v1.1.2
-git push origin v1.1.2
-git push github v1.1.2
+git tag v1.1.3
+git push origin v1.1.3
 
 # 或在 GitHub Actions 里 workflow_dispatch，填写 version
 ```
@@ -136,7 +136,7 @@ git push github v1.1.2
 本地发布（需 npm 登录，一般不需要）：
 
 ```bash
-./scripts/publish-cli.sh 1.1.2
+./scripts/publish-cli.sh 1.1.3
 ```
 
 npm 侧请为以下包配置 **Trusted Publisher → GitHub Actions**（repo `talesofai/okp`，workflow `publish-cli.yml`）：

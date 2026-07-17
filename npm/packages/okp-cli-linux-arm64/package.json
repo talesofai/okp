@@ -1,11 +1,17 @@
 {
   "name": "okp-cli-linux-arm64",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "okp CLI binary for linux arm64",
   "license": "MIT",
-  "os": ["linux"],
-  "cpu": ["arm64"],
-  "files": ["vendor"],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "vendor"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true

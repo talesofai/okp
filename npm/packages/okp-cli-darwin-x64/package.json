@@ -1,11 +1,17 @@
 {
   "name": "okp-cli-darwin-x64",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "okp CLI binary for darwin x64",
   "license": "MIT",
-  "os": ["darwin"],
-  "cpu": ["x64"],
-  "files": ["vendor"],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "vendor"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
