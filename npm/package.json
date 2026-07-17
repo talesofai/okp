@@ -1,8 +1,8 @@
 {
   "name": "@markbangwu/okp",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Open Knowledge Pool CLI — search, import, and manage knowledge concepts.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "bin": {
     "okp": "./okp.js"
   },
@@ -10,17 +10,23 @@
     "okp.js"
   ],
   "optionalDependencies": {
-    "okp-cli-linux-x64": "1.1.0",
-    "okp-cli-linux-arm64": "1.1.0",
-    "okp-cli-darwin-x64": "1.1.0",
-    "okp-cli-darwin-arm64": "1.1.0"
+    "okp-cli-linux-x64": "1.1.1",
+    "okp-cli-linux-arm64": "1.1.1",
+    "okp-cli-darwin-x64": "1.1.1",
+    "okp-cli-darwin-arm64": "1.1.1"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "repository": {
     "type": "git",
-    "url": "https://git.talesofai.com/markbang/okp.git"
+    "url": "https://github.com/talesofai/okp.git",
+    "directory": "npm"
+  },
+  "homepage": "https://github.com/talesofai/okp",
+  "bugs": {
+    "url": "https://github.com/talesofai/okp/issues"
   },
   "keywords": [
     "okp",

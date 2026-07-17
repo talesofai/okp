@@ -115,6 +115,38 @@ npx skills add https://github.com/talesofai/okp \
 - **okp-search** — 知识搜索 Skill，教 Agent 如何检索和导航知识
 - **okp-import** — 知识导入 Skill，教 Agent 如何清洗和导入知识
 
+## CI / 发布
+
+仓库使用 **GitHub Actions**：
+
+- `Deploy`：push 到 `main` 时构建镜像并部署到 K8s（secrets: `REGISTRY_TOKEN`, `KUBE_CONFIG`）
+- `Publish CLI`：打 `v*` tag 或手动触发，用 npm Trusted Publishing 发布 `@markbangwu/okp`
+
+发布 CLI：
+
+```bash
+# 推荐：打 tag 触发
+git tag v1.1.2
+git push origin v1.1.2
+git push github v1.1.2
+
+# 或在 GitHub Actions 里 workflow_dispatch，填写 version
+```
+
+本地发布（需 npm 登录，一般不需要）：
+
+```bash
+./scripts/publish-cli.sh 1.1.2
+```
+
+npm 侧请为以下包配置 **Trusted Publisher → GitHub Actions**（repo `talesofai/okp`，workflow `publish-cli.yml`）：
+
+- `@markbangwu/okp`
+- `okp-cli-linux-x64`
+- `okp-cli-linux-arm64`
+- `okp-cli-darwin-x64`
+- `okp-cli-darwin-arm64`
+
 ## 自托管部署
 
 ### Docker

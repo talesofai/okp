@@ -2,6 +2,9 @@
 /bin/
 *.exe
 
+# npm platform binaries are built in CI / publish-cli, not committed
+npm/packages/*/vendor/
+
 # IDE
 .idea/
 .vscode/

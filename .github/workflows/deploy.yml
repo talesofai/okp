@@ -1,0 +1,49 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
+      - "skills/**"
+      - "frontend/**"
+      - ".github/workflows/publish-cli.yml"
+
+concurrency:
+  group: deploy-okp
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version
+        run: echo "VERSION=${GITHUB_SHA::8}" >> "$GITHUB_ENV"
+
+      - name: Login to Registry
+        run: echo "${{ secrets.REGISTRY_TOKEN }}" | docker login git.talesofai.com -u markbang --password-stdin
+
+      - name: Build and Push
+        run: |
+          docker build -t "git.talesofai.com/markbang/okp:${VERSION}" .
+          docker tag "git.talesofai.com/markbang/okp:${VERSION}" git.talesofai.com/markbang/okp:latest
+          docker push "git.talesofai.com/markbang/okp:${VERSION}"
+          docker push git.talesofai.com/markbang/okp:latest
+
+      - name: Install kubectl
+        run: |
+          curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Deploy
+        run: |
+          sed -i "s|:latest|:${VERSION}|g" k8s/deploy.yaml
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > /tmp/kubeconfig
+          kubectl --kubeconfig /tmp/kubeconfig apply -f k8s/deploy.yaml
+          kubectl --kubeconfig /tmp/kubeconfig -n knowledge rollout status deployment/okp --timeout=180s
