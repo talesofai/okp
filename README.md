@@ -1,11 +1,7 @@
 <p align="center">
-  <a href="https://neta.art">
     <img src="docs/assets/neta.png" alt="Neta.art" width="48" height="48" />
-  </a>
-  &nbsp;&nbsp;&nbsp;
-  <a href="https://cohub.run">
+    &nbsp;&nbsp;&nbsp;
     <img src="docs/assets/cohub.png" alt="Cohub" width="48" height="48" />
-  </a>
 </p>
 
 <h1 align="center">OKP — Open Knowledge Pool</h1>
@@ -19,8 +15,6 @@
   <a href="https://okp.neta.art">Live API</a>
   ·
   <a href="https://cohub.run/koujiaxin/real-canvas/w/okp">Portal</a>
-  ·
-  <a href="https://www.npmjs.com/package/@markbangwu/okp"><img src="https://img.shields.io/npm/v/@markbangwu/okp" alt="npm" /></a>
 </p>
 
 ---
