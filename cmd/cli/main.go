@@ -14,9 +14,9 @@ var (
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "okp",
-		Short: "Open Knowledge Pool — 捏Ta 统一知识库 CLI",
-		Long: `okp 是 Open Knowledge Pool 的命令行工具。
-管理知识池中的 concept：写入、查询、导出、校验。
+		Short: "Open Knowledge Protocol CLI",
+		Long: `okp is the CLI for Open Knowledge Protocol.
+Create, search, and manage concepts across open domains.
 
 环境变量：
   OKP_API_BASE    API 服务地址（默认 https://okp.neta.art）

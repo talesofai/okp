@@ -38,7 +38,7 @@ function Root() {
           <Link to="/" style={{ textDecoration: "none" }}>
             <Text size="lg">okp</Text>
           </Link>
-          <Text color="secondary" size="sm">open knowledge pool</Text>
+          <Text color="secondary" size="sm">open knowledge protocol</Text>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <InviteButton />

@@ -1,7 +1,7 @@
 {
   "name": "@markbangwu/okp",
   "version": "1.1.2",
-  "description": "Open Knowledge Pool CLI — search, import, and manage knowledge concepts.",
+  "description": "Open Knowledge Protocol CLI — search, import, and manage knowledge concepts.",
   "license": "MIT",
   "bin": {
     "okp": "./okp.js"

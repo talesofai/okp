@@ -4,10 +4,10 @@
     <img src="docs/assets/cohub.png" alt="Cohub" width="48" height="48" />
 </p>
 
-<h1 align="center">OKP — Open Knowledge Pool</h1>
+<h1 align="center">OKP — Open Knowledge Protocol</h1>
 
 <p align="center">
-  An open knowledge pool for people and AI agents.<br/>
+  An open knowledge protocol for people and AI agents.<br/>
   Built for the <a href="https://cohub.run">Cohub</a> ecosystem. Runs on your own host too.
 </p>
 
@@ -23,7 +23,7 @@
 
 Most knowledge lives in chat logs, wikis, and docs that agents struggle to use well.
 
-OKP turns that into an **open, structured, searchable knowledge pool**:
+OKP turns that into an **open, structured, searchable knowledge protocol**:
 
 - **Open by default** — every domain is readable; no private silos
 - **Domain-shaped knowledge** — each domain has its own README and schema

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>okp — open knowledge pool</title>
+<title>okp — open knowledge protocol</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 :root{--bg:#0d0f12;--surface:#15181d;--border:#252830;--text:#9ca3af;--dim:#5c6068;--bright:#e0e4ea;--accent:#6b8ab0;--amber:#b89543;--green:#5a815a;--blue:#5a7b9b}
@@ -72,7 +72,7 @@ h1.page{font-size:22px;color:var(--bright);margin-bottom:24px}
 
 <div class="topbar">
   <a href="#" class="logo" onclick="route('/')">okp</a>
-  <span class="sub">open knowledge pool</span>
+  <span class="sub">open knowledge protocol</span>
 </div>
 <main id="app"><div class="loading">loading…</div></main>
 
@@ -112,7 +112,7 @@ window.onhashchange = function(){ route(location.hash.slice(1), false); };
 function home() {
   api('/api/v1/domains').then(function(domains){
     var h = '<div class="hero">';
-    h += '<h1>知识池</h1><p>浏览所有知识领域，搜索概念</p>';
+    h += '<h1>Open Knowledge Protocol</h1><p>浏览所有知识领域，搜索概念</p>';
     h += '<div class="search-box"><form onsubmit="event.preventDefault();route(\'/search?q=\'+encodeURIComponent(this.q.value))">';
     h += '<input name="q" placeholder="搜索概念…" autofocus>';
     h += '<button type="submit">搜索</button></form></div></div>';

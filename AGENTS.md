@@ -2,7 +2,7 @@
 
 ## Overview
 
-Open Knowledge Pool (okp) — 捏Ta 统一知识库池。基于 PostgreSQL 的统一知识存储，提供 API/CLI/Skills 三层访问面。核心设计见 `wiki/queries/pg-api-skills-knowledge-pool-feasibility.md`。
+Open Knowledge Protocol (okp) — open structured knowledge for people and agents. PostgreSQL-backed storage with API/CLI/Skills access surfaces.
 
 ## Tech Stack
 

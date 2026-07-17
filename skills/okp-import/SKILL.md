@@ -1,7 +1,7 @@
 ---
 name: okp-import
 version: 1.6.0
-description: "将领域知识清洗并导入 Open Knowledge Pool。面向各领域 owner 的 agent：读 domain README → 查重 → 蒸馏 → 校验 → 写入。"
+description: "将领域知识清洗并导入 Open Knowledge Protocol。面向各领域 owner 的 agent：读 domain README → 查重 → 蒸馏 → 校验 → 写入。"
 metadata:
   requires:
     bins: ["okp"]

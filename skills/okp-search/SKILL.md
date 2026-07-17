@@ -1,7 +1,7 @@
 ---
 name: okp-search
 version: 1.6.0
-description: "在 Open Knowledge Pool 中搜索和导航知识。面向消费 agent：先读 domain README → 按 schema 精确过滤/搜索 → light list → 精读少数 → 沿 links 导航。"
+description: "在 Open Knowledge Protocol 中搜索和导航知识。面向消费 agent：先读 domain README → 按 schema 精确过滤/搜索 → light list → 精读少数 → 沿 links 导航。"
 metadata:
   requires:
     bins: ["okp"]
@@ -20,7 +20,7 @@ okp domains   # 确认 API 可达
 ## 何时使用
 
 - agent 需要查找知识（角色、画风、操作手册、社媒分享等）。
-- 回答用户问题时需要检索知识池中的结构化知识。
+- 回答用户问题时需要检索 Open Knowledge Protocol 中的结构化知识。
 - 遍历概念之间的关系（通过 links）。
 
 ## 读权限

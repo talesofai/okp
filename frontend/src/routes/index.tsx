@@ -19,8 +19,8 @@ function Home() {
   return (
     <div>
       <div style={{ textAlign: "center", marginBottom: 40 }}>
-        <Text size="2xl" weight="bold" as="h1" style={{ marginBottom: 8 }}>知识池</Text>
-        <Text color="secondary">浏览所有知识领域，搜索概念</Text>
+        <Text size="2xl" weight="bold" as="h1" style={{ marginBottom: 8 }}>Open Knowledge Protocol</Text>
+        <Text color="secondary">Browse domains, search concepts</Text>
 
         <form
           style={{ marginTop: 24 }}
