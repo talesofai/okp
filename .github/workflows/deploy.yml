@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths-ignore:
       - "README.md"
+      - "LICENSE"
       - "docs/**"
       - "skills/**"
       - "frontend/**"
       - ".github/workflows/publish-cli.yml"
+      - ".github/workflows/deploy.yml"
 
 concurrency:
   group: deploy-okp

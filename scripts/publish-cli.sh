@@ -41,6 +41,13 @@ if [[ ! "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
   exit 1
 fi
 
+# Skip if this version is already published (e.g. tag re-push after history rewrite)
+PUBLISHED=$(npm view @markbangwu/okp version 2>/dev/null || echo "")
+if [[ "$PUBLISHED" == "$NEW_VERSION" ]]; then
+  echo "@markbangwu/okp@$NEW_VERSION already published, skipping."
+  exit 0
+fi
+
 echo "Publishing okp CLI: $CURRENT → $NEW_VERSION"
 
 for PKG_SUFFIX in "${!PLATFORMS[@]}"; do
