@@ -1,6 +1,6 @@
 ---
 name: okp-import
-version: 1.6.0
+version: 1.7.0
 description: "将领域知识清洗并导入 Open Knowledge Protocol。面向各领域 owner 的 agent：读 domain README → 查重 → 蒸馏 → 校验 → 写入。"
 metadata:
   requires:
@@ -19,14 +19,16 @@ okp domains    # 确认 API 可达
 
 ## 权限模型
 
-`admin > host > writer > reader`
+`public: admin/host > writer > reader`
 
-- **admin**：全局管理员，可读写任意 domain，无需加入成员表。
+`private: host > writer > reader`
+
+- **admin**：全局管理员，可管理公开 domain。对 private domain 没有任何旁路权限，必须接受 reader/writer 邀请后才能读取或写入，且仍不能管理 private domain。
 - **host**：每个 domain 有且只有一个 host，由 domain 创建者自动获得。负责管理 domain README、成员和邀请码。host 不可转让。
 - **writer**：domain 写入者。可通过 invitation 获得。可写入概念，不能管理成员和邀请码。
-- **reader**：所有已认证用户的默认权限。可读取全部 domain，无需加入成员表。
+- **reader**：公开 domain 的默认只读权限；在 private domain 中必须通过邀请显式获得。
 
-**所有 domain 均开放读取，没有私有 domain 这个概念。**
+domain 默认公开。创建者可选择 private；private domain 不会向非成员出现在 domains、search、sample、links 或 export 中。
 
 ### 新建 domain → 自动成为 host
 
@@ -38,11 +40,17 @@ okp domain <domain> --set readme.md
 
 返回 201 即创建成功，创建者已持有 host 角色。
 
+创建 private domain：
+
+```bash
+okp domain <domain> --set readme.md --visibility private
+```
+
 ### 获得 writer 权限
 
 若 `put` / `batch` / `domain --set` 返回 403（write access denied）：
 
-1. 让该 domain 的 host/admin 生成邀请码：
+1. 让该 domain 的 host（公开 domain 也可由 admin）生成邀请码：
    ```bash
    okp invite create <domain> --expires-hours 72 --max-uses 1
    ```
@@ -55,7 +63,12 @@ okp domain <domain> --set readme.md
    okp invite members <domain>
    ```
 
-邀请码只能授予 `writer`，不能获得 `host` 或 `admin`。
+公开 domain 邀请码授予 `writer`。private domain 可邀请 `reader` 或 `writer`，不能授予 `host` 或 `admin`：
+
+```bash
+okp invite create <private-domain> --role reader
+okp invite create <private-domain> --role writer
+```
 邀请码是短码，不是链接路由。门户右上角「邀请」也可输入同一邀请码。
 
 ## 工作流（严格按顺序）
@@ -214,7 +227,20 @@ okp invite members <domain>
 
 - create 时明文 code 只显示一次
 - list 不返回明文 code
-- 邀请角色固定为 `writer`
+- 公开 domain 的邀请角色固定为 `writer`
+- private domain 的邀请角色可以是 `reader` 或 `writer`
+
+## 删除
+
+```bash
+# writer/host 可删除有写权限 domain 中的 concept；公开 domain 的 admin 也可删除
+okp delete <concept-id> --yes
+
+# private domain 只有 host 可删除；公开 domain 的 host/admin 可删除
+okp domain <domain> --delete --yes
+```
+
+domain 删除会永久清理该 domain 的 concepts、links、revisions、members 和 invites。
 
 ## 不在本 skill 范围
 

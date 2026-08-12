@@ -7,6 +7,16 @@ export const OKP_WORK_URL = "https://cohub.run/koujiaxin/real-canvas/w/okp";
 export interface Domain {
   domain: string;
   concept_count: number;
+  has_readme?: boolean;
+  visibility: "public" | "private";
+}
+
+export interface DomainMeta {
+  domain: string;
+  readme: string;
+  schema: Record<string, unknown>;
+  visibility: "public" | "private";
+  updated_at?: string;
 }
 
 export interface Concept {
@@ -103,6 +113,23 @@ async function fetchOkp<T>(
   return res.json();
 }
 
+async function fetchOkpVoid(
+  path: string,
+  getToken: (() => Promise<string | null>) | null,
+  init: RequestInit,
+): Promise<void> {
+  const token = getToken ? await getToken() : null;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const res = await fetch(`${OKP_BASE}${path}`, { ...init, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+}
+
 export function useApi() {
   const { getToken } = useRuntime();
 
@@ -120,6 +147,20 @@ export function useApi() {
       }),
 
       domains: () => fetchOkp<Domain[]>("/api/v1/domains", getToken),
+
+      putDomain: (domain: string, body: { readme: string; visibility: "public" | "private" }) =>
+        fetchOkp<DomainMeta>(
+          `/api/v1/domains/${encodeURIComponent(domain)}`,
+          getToken,
+          { method: "PUT", body: JSON.stringify(body) },
+        ),
+
+      deleteDomain: (domain: string) =>
+        fetchOkpVoid(
+          `/api/v1/domains/${encodeURIComponent(domain)}`,
+          getToken,
+          { method: "DELETE" },
+        ),
 
       search: (params: {
         q?: string;
@@ -146,8 +187,15 @@ export function useApi() {
           getToken,
         ),
 
+      deleteConcept: (id: string) =>
+        fetchOkpVoid(
+          `/api/v1/concepts/${id.split("/").map(encodeURIComponent).join("/")}`,
+          getToken,
+          { method: "DELETE" },
+        ),
+
       getDomainReadme: (domain: string) =>
-        fetchOkp<{ domain: string; readme: string; schema: string }>(
+        fetchOkp<DomainMeta>(
           `/api/v1/domains/${encodeURIComponent(domain)}`,
           getToken,
         ),

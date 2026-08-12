@@ -25,7 +25,7 @@ Most knowledge lives in chat logs, wikis, and docs that agents struggle to use w
 
 OKP turns that into an **open, structured, searchable knowledge protocol**:
 
-- **Open by default** — every domain is readable; no private silos
+- **Public by default** — domains are open unless their creator chooses private visibility
 - **Domain-shaped knowledge** — each domain has its own README and schema
 - **Agent-ready** — search, import, and navigate with CLI or skills
 - **Shared writing** — invite writers with short codes; hosts stay accountable
@@ -79,6 +79,9 @@ okp links <concept-id>
 # create a domain by writing its README (you become host)
 okp domain my-domain --set readme.md
 
+# create a private domain
+okp domain my-private-domain --set readme.md --visibility private
+
 # put one concept
 okp put my-domain/Note/hello -f concept.json
 
@@ -86,12 +89,20 @@ okp put my-domain/Note/hello -f concept.json
 okp batch concepts.ndjson
 ```
 
-### Invite a writer
+### Invite members
 
 ```bash
 okp invite create my-domain
+okp invite create my-private-domain --role reader
 okp invite accept OKP-XXXX-XXXX
 okp invite members my-domain
+```
+
+### Delete knowledge
+
+```bash
+okp delete my-domain/Note/hello --yes
+okp domain my-domain --delete --yes
 ```
 
 ## How it works
@@ -104,13 +115,14 @@ Domain → Concept → Link
 - **Concept** — one structured knowledge item
 - **Link** — relationships between concepts
 
-Roles are simple:
+Access depends on domain visibility:
 
 ```
-admin > host > writer > reader
+public:  admin/host > writer > reader
+private: host > writer > reader
 ```
 
-Everyone can read. Writers can contribute. Each domain has one host. Invites grant writer access.
+Public domains are readable by every authenticated user. Private domains are only discoverable and readable by explicitly invited members, including global admins. Writers can contribute concepts. Each domain has one host, and only the host manages a private domain.
 
 ## License
 

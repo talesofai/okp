@@ -17,6 +17,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"gorm.io/gorm/clause"
 
+	"github.com/talesofai/okp/internal/access"
 	"github.com/talesofai/okp/internal/config"
 	"github.com/talesofai/okp/internal/model"
 	"github.com/talesofai/okp/internal/store"
@@ -288,60 +289,30 @@ func upsertUser(userID, authType string) {
 	}
 }
 
-// isAdmin checks if the user has global admin role.
-func isAdmin(userID string) bool {
-	if userID == "" || store.DB == nil {
-		return false
-	}
-	var user model.User
-	if err := store.DB.Where("uuid = ?", userID).First(&user).Error; err != nil {
-		return false
-	}
-	return user.Role == "admin"
-}
-
 // CanWriteDomain checks if the user can write to a specific domain.
-// Returns true if user is admin, or is host/writer of the domain.
+// Private domains never grant an implicit global-admin override.
 func CanWriteDomain(userID, domain string) bool {
-	if userID == "" || store.DB == nil {
-		return false
-	}
-	// admin can write anywhere
-	if isAdmin(userID) {
-		return true
-	}
-	// check domain membership
-	var member model.DomainMember
-	if err := store.DB.Where("domain = ? AND user_id = ?", domain, userID).First(&member).Error; err != nil {
-		return false
-	}
-	return member.Role == "host" || member.Role == "writer"
+	return access.CanWriteDomain(userID, domain)
 }
 
-// ResolveDomainRole returns the user's role for a domain.
-// Returns "admin" for global admins, otherwise the domain_members role, defaulting to "reader".
-func ResolveDomainRole(userID, domain string) string {
-	if userID == "" || store.DB == nil {
-		return "reader"
-	}
-	if isAdmin(userID) {
-		return "admin"
-	}
-	var member model.DomainMember
-	if err := store.DB.Where("domain = ? AND user_id = ?", domain, userID).First(&member).Error; err != nil {
-		return "reader"
-	}
-	return member.Role
+// CanReadDomain checks whether the caller may discover and read a domain.
+func CanReadDomain(userID, domain string) bool {
+	return access.CanReadDomain(userID, domain)
+}
+
+// CanManageDomain checks README, invite, member, visibility, and delete access.
+func CanManageDomain(userID, domain string) bool {
+	return access.CanManageDomain(userID, domain)
+}
+
+// IsDomainHost only considers the explicit host membership.
+func IsDomainHost(userID, domain string) bool {
+	return access.IsDomainHost(userID, domain)
 }
 
 // GetUserDomains returns all domain memberships for a user.
 func GetUserDomains(userID string) []model.DomainMember {
-	if userID == "" || store.DB == nil {
-		return nil
-	}
-	var members []model.DomainMember
-	store.DB.Where("user_id = ?", userID).Find(&members)
-	return members
+	return access.GetUserDomains(userID)
 }
 
 // ── Middleware ──────────────────────────────────────────────
@@ -353,7 +324,7 @@ func GetUserDomains(userID string) []model.DomainMember {
 //
 // 健康检查路径 /api/v1/health 免认证。
 // 所有认证用户自动记录到 users 表。
-// GET/HEAD/OPTIONS 请求所有认证用户均可访问；写请求需要白名单权限。
+// Resource handlers enforce domain visibility and write permissions.
 func Auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/health" {
@@ -425,14 +396,6 @@ func Auth(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, AuthTypeKey, authType)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-func isWriteMethod(method string) bool {
-	switch method {
-	case "POST", "PUT", "PATCH", "DELETE":
-		return true
-	}
-	return false
 }
 
 // isAdminRoute 允许 admin 路由绕过 writer 角色检查（用于 bootstrap）

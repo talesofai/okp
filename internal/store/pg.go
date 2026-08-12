@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/glebarez/sqlite"
 	"github.com/talesofai/okp/internal/config"
 	"github.com/talesofai/okp/internal/model"
 	"gorm.io/driver/postgres"
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
 )
@@ -87,6 +87,7 @@ func Init() {
 		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_links_from ON links (from_id)").Error
 		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_links_to ON links (to_id)").Error
 		_ = DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_members_one_host ON domain_members (domain) WHERE role = 'host'").Error
+		_ = DB.Exec("CREATE INDEX IF NOT EXISTS idx_domain_meta_visibility ON domain_meta (visibility)").Error
 	} else {
 		// PostgreSQL: 确保 UTF-8 编码
 		_ = DB.Exec("SET client_encoding = 'UTF8'").Error
@@ -100,6 +101,7 @@ func Init() {
 		// 复合索引：domain + type（领域过滤查询优化）
 		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_domain_type ON concepts (domain, type)`).Error
 		_ = DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_members_one_host ON domain_members (domain) WHERE role = 'host'`).Error
+		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_domain_meta_visibility ON domain_meta (visibility)`).Error
 		// 状态 + 领域索引：加速 domains 列表、领域统计查询
 		// frontmatter GIN 全列索引（支持所有 key 的 @> 包含查询）
 		_ = DB.Exec(`CREATE INDEX IF NOT EXISTS idx_concepts_frontmatter_gin ON concepts USING gin (frontmatter)`).Error

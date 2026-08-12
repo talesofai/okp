@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useApi } from "../api/client";
-import { Text, Badge, Surface, Empty, Loader } from "@cloudflare/kumo";
+import { Text, Badge, Surface, Empty, Loader, Button } from "@cloudflare/kumo";
 
 declare const marked: { parse: (md: string) => string };
 
@@ -30,12 +30,40 @@ export const Route = createFileRoute("/concept/$")({
 
 function ConceptDetail() {
   const api = useApi();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const params = Route.useParams() as Record<string, string>;
   const id = params.$ ?? params._splat ?? "";
 
   const { data: concept, isLoading, error } = useQuery({
     queryKey: ["concept", id],
     queryFn: () => api.getConcept(id),
+  });
+
+  const { data: me } = useQuery({
+    queryKey: ["me"],
+    queryFn: api.me,
+    retry: false,
+  });
+
+  const { data: meta, isFetched: metaFetched } = useQuery({
+    queryKey: ["domain-meta", concept?.domain],
+    queryFn: () => api.getDomainReadme(concept!.domain),
+    enabled: Boolean(concept?.domain),
+    retry: false,
+  });
+
+  const membership = me?.domains?.find((d) => d.domain === concept?.domain)?.role;
+  const canDelete = membership === "host" || membership === "writer" ||
+    (me?.role === "admin" && metaFetched && (meta?.visibility ?? "public") === "public");
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteConcept(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["domain", concept?.domain] });
+      await queryClient.invalidateQueries({ queryKey: ["domains"] });
+      navigate({ to: "/domain/$domain", params: { domain: concept!.domain } });
+    },
   });
 
   const bodyHtml = useMemo(() => {
@@ -114,6 +142,30 @@ function ConceptDetail() {
             </pre>
           </details>
         </Surface>
+      )}
+
+      {canDelete && (
+        <div style={{ borderTop: "1px solid rgba(128,128,128,0.22)", marginTop: 40, paddingTop: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+            <div>
+              <Text weight="medium" color="danger">删除 Concept</Text>
+              <Text size="sm" color="secondary">同时删除该 concept 的 revision 历史和所有相关 links。</Text>
+            </div>
+            <Button
+              variant="outline"
+              disabled={deleteMutation.isPending}
+              style={{ color: "#dc2626", borderColor: "rgba(220,38,38,0.45)" }}
+              onClick={() => {
+                if (window.confirm(`永久删除 concept ${concept.id}？`)) deleteMutation.mutate();
+              }}
+            >
+              {deleteMutation.isPending ? "删除中…" : "删除"}
+            </Button>
+          </div>
+          {deleteMutation.error && (
+            <Text size="sm" color="danger" style={{ marginTop: 8 }}>{(deleteMutation.error as Error).message}</Text>
+          )}
+        </div>
       )}
     </div>
   );

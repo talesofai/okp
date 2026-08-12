@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/talesofai/okp/internal/access"
 	"github.com/talesofai/okp/internal/model"
 	"github.com/talesofai/okp/internal/store"
 	"gopkg.in/yaml.v3"
@@ -20,22 +21,41 @@ func GetDomainMeta(domain string) (*model.DomainMeta, error) {
 	return &meta, nil
 }
 
+// DomainExists reports whether a domain has metadata or at least one concept.
+func DomainExists(domain string) (bool, error) {
+	var count int64
+	if err := store.DB.Model(&model.DomainMeta{}).Where("domain = ?", domain).Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+	if err := store.DB.Model(&model.Concept{}).Where("domain = ?", domain).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // PutDomainMeta writes or updates a domain README. When creating a domain, it
 // grants the authenticated creator the domain's single host membership in the
 // same transaction. Existing domains retain their original host.
-func PutDomainMeta(domain, readme, creatorID string) (*model.DomainMeta, bool, error) {
+func PutDomainMeta(domain, readme, visibility, creatorID string) (*model.DomainMeta, bool, error) {
 	schema, err := parseReadmeSchema(readme)
 	if err != nil {
 		return nil, false, fmt.Errorf("README schema 解析失败: %w", err)
+	}
+	if !access.IsValidVisibility(visibility) {
+		return nil, false, fmt.Errorf("visibility must be 'public' or 'private'")
 	}
 	if creatorID == "" {
 		return nil, false, fmt.Errorf("creator user id is required")
 	}
 
 	meta := model.DomainMeta{
-		Domain: domain,
-		Readme: readme,
-		Schema: model.JSONMap{"fields": schema.Fields},
+		Domain:     domain,
+		Readme:     readme,
+		Schema:     model.JSONMap{"fields": schema.Fields},
+		Visibility: visibility,
 	}
 	created := false
 
@@ -45,8 +65,9 @@ func PutDomainMeta(domain, readme, creatorID string) (*model.DomainMeta, bool, e
 		switch {
 		case err == nil:
 			return tx.Model(&existing).Updates(map[string]any{
-				"readme": readme,
-				"schema": meta.Schema,
+				"readme":     readme,
+				"schema":     meta.Schema,
+				"visibility": visibility,
 			}).Error
 		case err != gorm.ErrRecordNotFound:
 			return err
@@ -71,6 +92,57 @@ func PutDomainMeta(domain, readme, creatorID string) (*model.DomainMeta, bool, e
 		}
 	}
 	return &meta, created, nil
+}
+
+// DeleteDomain removes a domain and all data owned by it in one transaction.
+func DeleteDomain(domain string) error {
+	return store.DB.Transaction(func(tx *gorm.DB) error {
+		var meta model.DomainMeta
+		metaErr := tx.Where("domain = ?", domain).First(&meta).Error
+		if metaErr != nil && metaErr != gorm.ErrRecordNotFound {
+			return metaErr
+		}
+
+		var conceptCount int64
+		if err := tx.Model(&model.Concept{}).Where("domain = ?", domain).Count(&conceptCount).Error; err != nil {
+			return err
+		}
+		if metaErr == gorm.ErrRecordNotFound && conceptCount == 0 {
+			return gorm.ErrRecordNotFound
+		}
+
+		if conceptCount > 0 {
+			conceptIDs := tx.Model(&model.Concept{}).Select("id").Where("domain = ?", domain)
+			if err := tx.Where(`
+				from_id IN (?) OR to_id IN (?)
+				OR substr(from_id, 1, length(?) + 1) = ? || '/'
+				OR substr(to_id, 1, length(?) + 1) = ? || '/'
+			`, conceptIDs, conceptIDs, domain, domain, domain, domain).Delete(&model.Link{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("concept_id IN (?)", conceptIDs).Delete(&model.Revision{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("domain = ?", domain).Delete(&model.Concept{}).Error; err != nil {
+				return err
+			}
+		} else if err := tx.Where(`
+			substr(from_id, 1, length(?) + 1) = ? || '/'
+			OR substr(to_id, 1, length(?) + 1) = ? || '/'
+		`, domain, domain, domain, domain).Delete(&model.Link{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("domain = ?", domain).Delete(&model.DomainInvite{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("domain = ?", domain).Delete(&model.DomainMember{}).Error; err != nil {
+			return err
+		}
+		if metaErr == nil {
+			return tx.Delete(&meta).Error
+		}
+		return nil
+	})
 }
 
 // ValidateFrontmatter 按 domain schema 校验 concept 的 frontmatter

@@ -1,6 +1,6 @@
 ---
 name: okp-search
-version: 1.6.0
+version: 1.7.0
 description: "在 Open Knowledge Protocol 中搜索和导航知识。面向消费 agent：先读 domain README → 按 schema 精确过滤/搜索 → light list → 精读少数 → 沿 links 导航。"
 metadata:
   requires:
@@ -25,7 +25,7 @@ okp domains   # 确认 API 可达
 
 ## 读权限
 
-所有已认证用户均可读取全部 domain，无需加入成员表。搜索/浏览不要求任何 domain 角色。
+公开 domain 对所有已认证用户可读。private domain 只对显式受邀的 `reader` / `writer` 和创建者 `host` 可见；全局 admin 也没有读取旁路，必须先接受邀请。
 写入权限见 okp-import；本 skill 只读。
 
 ## 检索循环（严格按此顺序）
@@ -37,8 +37,10 @@ okp domains              # 列出所有领域
 okp domains -q <keyword> # 按名称模糊找领域
 ```
 
-返回字段：`domain`、`concept_count`、`has_readme`。  
+返回字段：`domain`、`concept_count`、`has_readme`、`visibility`。
 `concept_count=0` 表示已定义 README 但还没有 concept。
+
+private domain 在未获邀请前不会出现在列表、搜索、sample、links 或 export 结果中。
 
 ### Step 2: 读 domain README（必做）
 

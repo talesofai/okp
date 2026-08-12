@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
@@ -48,26 +48,22 @@ const PAGE_SIZE = 50
 function DomainPage() {
   const api = useApi();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { domain } = Route.useParams()
   const [offset, setOffset] = useState(0)
   const [readmeCollapsed, setReadmeCollapsed] = useState(false)
   const [createdInvite, setCreatedInvite] = useState<CreateInviteResponse | null>(null)
   const [inviteError, setInviteError] = useState<string | null>(null)
+  const [inviteRole, setInviteRole] = useState<'reader' | 'writer'>('writer')
 
   const { data: concepts, isLoading } = useQuery({
     queryKey: ['domain', domain, offset],
     queryFn: () => api.search({ domain, limit: PAGE_SIZE, offset }),
   })
 
-  const { data: meta } = useQuery({
+  const { data: meta, isFetched: metaFetched } = useQuery({
     queryKey: ['domain-meta', domain],
     queryFn: () => api.getDomainReadme(domain),
-    retry: false,
-  })
-
-  const { data: members } = useQuery({
-    queryKey: ['domain-members', domain],
-    queryFn: () => api.listMembers(domain),
     retry: false,
   })
 
@@ -78,12 +74,19 @@ function DomainPage() {
   })
 
   const myDomainRole = useMemo(() => {
-    if (me?.role === 'admin') return 'admin'
+	if (me?.role === 'admin' && metaFetched && (meta?.visibility ?? 'public') === 'public') return 'admin'
     const m = me?.domains?.find((d) => d.domain === domain)
-    return m?.role ?? 'reader'
-  }, [me, domain])
+	if (m) return m.role
+	return 'reader'
+  }, [me, metaFetched, meta?.visibility, domain])
 
   const canManage = myDomainRole === 'admin' || myDomainRole === 'host'
+
+  const { data: members } = useQuery({
+    queryKey: ['domain-members', domain],
+    queryFn: () => api.listMembers(domain),
+    retry: false,
+  })
 
   const { data: invites } = useQuery({
     queryKey: ['domain-invites', domain],
@@ -93,7 +96,7 @@ function DomainPage() {
   })
 
   const createInviteMutation = useMutation({
-    mutationFn: () => api.createInvite(domain, { role: 'writer', expires_in_hours: 72, max_uses: 1 }),
+    mutationFn: () => api.createInvite(domain, { role: inviteRole, expires_in_hours: 72, max_uses: 1 }),
     onSuccess: (res) => {
       setCreatedInvite(res)
       setInviteError(null)
@@ -108,6 +111,15 @@ function DomainPage() {
     mutationFn: (id: string) => api.revokeInvite(domain, id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['domain-invites', domain] })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteDomain(domain),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['domains'] })
+      await queryClient.invalidateQueries({ queryKey: ['me'] })
+      navigate({ to: '/' })
     },
   })
 
@@ -136,6 +148,9 @@ function DomainPage() {
           <Badge variant="info">{concepts.length} on this page</Badge>
         )}
         <Badge variant="default">{myDomainRole}</Badge>
+        <Badge variant={meta?.visibility === 'private' ? 'warning' : 'default'}>
+          {meta?.visibility ?? 'public'}
+        </Badge>
         {hasReadme && (
           <Button
             variant="outline"
@@ -165,9 +180,7 @@ function DomainPage() {
         <Surface style={{ padding: "16px 20px", marginBottom: 24 }}>
           <Text size="sm" color="secondary" style={{ marginBottom: 12 }}>成员</Text>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {members
-              .filter((m) => m.role === 'host' || m.role === 'writer')
-              .map((m) => {
+            {members.map((m) => {
                 const name = m.display_name || m.username || `${m.user_id.slice(0, 8)}…`
                 return (
                   <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -195,7 +208,7 @@ function DomainPage() {
                     </div>
                     <span style={{
                       fontSize: 10, padding: '2px 8px', borderRadius: 4,
-                      background: m.role === 'host' ? '#10b981' : '#6b7280',
+					  background: m.role === 'host' ? '#2563eb' : m.role === 'writer' ? '#10b981' : '#6b7280',
                       color: '#fff',
                     }}>
                       {m.role}
@@ -213,15 +226,29 @@ function DomainPage() {
             <div>
               <Text weight="medium">邀请成员</Text>
               <Text size="sm" color="secondary">
-                生成写入权限邀请码（默认 72 小时、一次有效）。把邀请码发给对方，让对方点右上角「邀请」输入即可。
+				默认 72 小时、一次有效。
               </Text>
             </div>
-            <Button
-              onClick={() => createInviteMutation.mutate()}
-              disabled={createInviteMutation.isPending}
-            >
-              {createInviteMutation.isPending ? '生成中…' : '生成邀请码'}
-            </Button>
+			<div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+			  {meta?.visibility === 'private' && (
+				<div style={{ display: 'flex', gap: 6 }}>
+				  <Button
+					variant={inviteRole === 'reader' ? undefined : 'outline'}
+					onClick={() => { setInviteRole('reader'); setCreatedInvite(null) }}
+				  >只读</Button>
+				  <Button
+					variant={inviteRole === 'writer' ? undefined : 'outline'}
+					onClick={() => { setInviteRole('writer'); setCreatedInvite(null) }}
+				  >可写</Button>
+				</div>
+			  )}
+			  <Button
+				onClick={() => createInviteMutation.mutate()}
+				disabled={createInviteMutation.isPending}
+			  >
+				{createInviteMutation.isPending ? '生成中…' : '生成邀请码'}
+			  </Button>
+			</div>
           </div>
 
           {inviteError && (
@@ -360,6 +387,26 @@ function DomainPage() {
           </div>
         </>
       )}
+
+	  {canManage && (
+		<div style={{ borderTop: '1px solid rgba(128,128,128,0.22)', marginTop: 40, paddingTop: 24 }}>
+		  <Text weight="medium" color="danger">危险操作</Text>
+		  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
+			<Text size="sm" color="secondary">永久删除该 domain、全部 concepts、links、revisions 和邀请记录。</Text>
+			<Button
+			  variant="outline"
+			  disabled={deleteMutation.isPending}
+			  style={{ color: '#dc2626', borderColor: 'rgba(220,38,38,0.45)' }}
+			  onClick={() => {
+				if (window.confirm(`永久删除 domain ${domain} 及其全部数据？`)) deleteMutation.mutate()
+			  }}
+			>
+			  {deleteMutation.isPending ? '删除中…' : '删除 Domain'}
+			</Button>
+		  </div>
+		  {deleteMutation.error && <Text size="sm" color="danger" style={{ marginTop: 8 }}>{(deleteMutation.error as Error).message}</Text>}
+		</div>
+	  )}
     </div>
   )
 }

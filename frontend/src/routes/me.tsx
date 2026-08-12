@@ -127,7 +127,7 @@ function MePage() {
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 4, background: roleColor("admin"), color: "#fff" }}>admin</span>
-            <Text size="sm">全局管理员，可写任何 domain</Text>
+            <Text size="sm">可管理公开 domain；私有 domain 必须显式受邀</Text>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 4, background: roleColor("host"), color: "#fff" }}>host</span>
@@ -139,7 +139,7 @@ function MePage() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 4, background: roleColor("reader"), color: "#fff" }}>reader</span>
-            <Text size="sm">默认公开只读；私有 domain 需显式授权</Text>
+            <Text size="sm">公开 domain 默认只读；私有 domain 的 reader 必须显式受邀</Text>
           </div>
           <Text size="sm" color="secondary" style={{ marginTop: 8 }}>
             需要写入权限时，让领域管理员生成邀请码，再点右上角「邀请」输入。

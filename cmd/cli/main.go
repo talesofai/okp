@@ -16,7 +16,7 @@ func main() {
 		Use:   "okp",
 		Short: "Open Knowledge Protocol CLI",
 		Long: `okp is the CLI for Open Knowledge Protocol.
-Create, search, and manage concepts across open domains.
+Create, search, and manage concepts across public and private domains.
 
 环境变量：
   OKP_API_BASE    API 服务地址（默认 https://okp.neta.art）
@@ -39,6 +39,7 @@ Create, search, and manage concepts across open domains.
 
 	rootCmd.AddCommand(cmdPut())
 	rootCmd.AddCommand(cmdGet())
+	rootCmd.AddCommand(cmdDelete())
 	rootCmd.AddCommand(cmdSearch())
 	rootCmd.AddCommand(cmdBatch())
 	rootCmd.AddCommand(cmdLinks())

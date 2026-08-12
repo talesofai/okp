@@ -35,6 +35,7 @@ skills/
 
 ```
 PUT    /api/v1/concepts/*              — upsert（L1 硬门禁在此校验；concept ID 含 /，用 catch-all 通配）
+DELETE /api/v1/concepts/*              — 删除 concept + links + revisions
 POST   /api/v1/concepts:batch          — 批量 upsert
 GET    /api/v1/concepts                — list/search（domain/type/tag/status/q）
 GET    /api/v1/concepts/*              — 单取
@@ -42,6 +43,8 @@ GET    /api/v1/links/*                 — 出链 + 反向引用（links 拆为�
 PUT    /api/v1/links/*                 — 替换概念的出链
 GET    /api/v1/domains/{domain}/export — OKF bundle 导出
 GET    /api/v1/domains                 — 领域清单
+PUT    /api/v1/domains/{domain}        — 创建/更新 README、schema、visibility
+DELETE /api/v1/domains/{domain}        — 级联删除 domain 全部数据
 GET    /api/v1/health                  — 健康检查
 ```
 
@@ -68,6 +71,7 @@ okp links  <id>       — 查看关系
 okp export <domain>   — OKF 导出
 okp lint   <file>     — 本地校验
 okp domains           — 领域清单
+okp delete <id>       — 删除 concept
 ```
 
 ## 核心设计原则
@@ -77,6 +81,7 @@ okp domains           — 领域清单
 3. **池外原始层不进池**：fandom 爬虫数据、wiki 原始页面保留在自己的库里，进池的只有蒸馏后的 concept。
 4. **搜索引擎可替换**：初始 trgm+filters，接口隔离（`internal/service/search.go`），后续换 pgroonga/pgvector 不动 API 契约。
 5. **provenance 必填**：`{source, agent, raw_ref, content_hash, imported_at}`，幂等重导入依赖 content_hash。
+6. **私有领域无 admin 旁路**：private domain 只对显式 host/writer/reader 成员可见；全局 admin 必须受邀，且邀请角色不会升级为管理权限。
 
 ## 命名约定
 

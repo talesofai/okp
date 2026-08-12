@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/talesofai/okp/internal/access"
 	"github.com/talesofai/okp/internal/model"
 	"github.com/talesofai/okp/internal/store"
 )
@@ -26,6 +27,7 @@ type SearchResult struct {
 
 // SearchParams 搜索参数
 type SearchParams struct {
+	UserID   string
 	Query    string
 	Domain   string
 	Type     string
@@ -46,7 +48,7 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 		params.Limit = 200
 	}
 
-	q := store.DB.Model(&model.Concept{})
+	q := store.DB.Model(&model.Concept{}).Scopes(access.ScopeReadableConcepts(params.UserID))
 
 	// 结构过滤
 	if params.Domain != "" {
@@ -109,7 +111,7 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 
 	// 向量搜索：有 query 且有 API key 时，并行进行
 	if params.Query != "" && !store.IsSQLite && embedAPIKey != "" {
-		vecResults, _ := vectorSearch(params.Query, params.Domain, params.Type, params.Limit)
+		vecResults, _ := vectorSearch(params.Query, params)
 		if len(vecResults) > 0 {
 			// 字符命中按精确度排序后再取 limit
 			q = applyExactnessOrder(q, params.Query)
@@ -195,7 +197,7 @@ func applySort(q *gorm.DB, sort string, textSearch bool, query string) *gorm.DB 
 }
 
 // Sample 随机采样 concepts
-func Sample(domain, typ string, limit int) ([]SearchResult, error) {
+func Sample(userID, domain, typ string, limit int) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 5
 	}
@@ -203,7 +205,7 @@ func Sample(domain, typ string, limit int) ([]SearchResult, error) {
 		limit = 50
 	}
 
-	q := store.DB.Model(&model.Concept{})
+	q := store.DB.Model(&model.Concept{}).Scopes(access.ScopeReadableConcepts(userID))
 	if domain != "" {
 		q = q.Where("domain = ?", domain)
 	}
@@ -274,7 +276,7 @@ func looksLikePath(q string) bool {
 }
 
 // vectorSearch 用向量进行语义搜索（包括跨语言）
-func vectorSearch(query, domain, typ string, limit int) ([]model.Concept, error) {
+func vectorSearch(query string, params SearchParams) ([]model.Concept, error) {
 	vecs, err := embedText([]string{query})
 	if err != nil || len(vecs) == 0 {
 		return nil, err
@@ -283,17 +285,27 @@ func vectorSearch(query, domain, typ string, limit int) ([]model.Concept, error)
 
 	// 有 embedding 就参与检索；不严格依赖 embed_status，避免批量导入后 status 未回写导致只命中几条
 	q := store.DB.Model(&model.Concept{}).
+		Scopes(access.ScopeReadableConcepts(params.UserID)).
 		Where("embedding IS NOT NULL")
-	if domain != "" {
-		q = q.Where("domain = ?", domain)
+	if params.Domain != "" {
+		q = q.Where("domain = ?", params.Domain)
 	}
-	if typ != "" {
-		q = q.Where("type = ?", typ)
+	if params.Type != "" {
+		q = q.Where("type = ?", params.Type)
+	}
+	for _, tag := range params.Tags {
+		q = q.Where("? = ANY(tags)", tag)
+	}
+	if params.Scenario != "" {
+		q = q.Where("frontmatter->>'scenario' = ?", params.Scenario)
+	}
+	for k, v := range params.Filters {
+		q = q.Where("frontmatter->>? = ?", k, v)
 	}
 
 	var concepts []model.Concept
 	err = q.Order(fmt.Sprintf("embedding <=> '%s'::vector", vecStr)).
-		Limit(limit).
+		Limit(params.Limit).
 		Find(&concepts).Error
 	return concepts, err
 }
@@ -376,31 +388,42 @@ type DomainInfo struct {
 	Domain       string `json:"domain"`
 	ConceptCount int64  `json:"concept_count"`
 	HasReadme    bool   `json:"has_readme"`
+	Visibility   string `json:"visibility"`
 }
 
 // ListDomains 列出所有领域。
 // 包含：有 concept 的 domain + 只有 README 的 domain（concept_count=0）。
 // q 为空时返回全部；不为空时用 trgm 模糊匹配领域名。
-func ListDomains(q string) ([]DomainInfo, error) {
+func ListDomains(userID, q string) ([]DomainInfo, error) {
 	// FULL JOIN：concept 聚合 + domain_meta，两边都覆盖
 	sql := `
 		SELECT
 			COALESCE(c.domain, m.domain) AS domain,
 			COALESCE(c.concept_count, 0) AS concept_count,
-			(m.domain IS NOT NULL) AS has_readme
+			(m.domain IS NOT NULL) AS has_readme,
+			COALESCE(m.visibility, 'public') AS visibility
 		FROM (
 			SELECT domain, COUNT(*) AS concept_count
 			FROM concepts GROUP BY domain
 		) c
-		FULL JOIN domain_meta m ON c.domain = m.domain`
+		FULL JOIN domain_meta m ON c.domain = m.domain
+		WHERE (
+			COALESCE(m.visibility, 'public') <> 'private'
+			OR EXISTS (
+				SELECT 1 FROM domain_members dmbr
+				WHERE dmbr.domain = COALESCE(c.domain, m.domain)
+				AND dmbr.user_id = ?
+				AND dmbr.role IN ('host', 'writer', 'reader')
+			)
+		)`
 
-	args := []interface{}{}
+	args := []interface{}{userID}
 	if q != "" && !store.IsSQLite {
-		sql += ` WHERE similarity(COALESCE(c.domain, m.domain), ?) > 0.1
-				OR COALESCE(c.domain, m.domain) ILIKE ?`
+		sql += ` AND (similarity(COALESCE(c.domain, m.domain), ?) > 0.1
+				OR COALESCE(c.domain, m.domain) ILIKE ?)`
 		args = append(args, q, "%"+q+"%")
 	} else if q != "" {
-		sql += ` WHERE COALESCE(c.domain, m.domain) LIKE ?`
+		sql += ` AND COALESCE(c.domain, m.domain) LIKE ?`
 		args = append(args, "%"+q+"%")
 	}
 	sql += ` ORDER BY concept_count DESC`

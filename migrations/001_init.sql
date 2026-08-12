@@ -41,6 +41,12 @@ CREATE INDEX IF NOT EXISTS idx_revisions_concept_rev
     ON revisions (concept_id, rev);
 
 -- ============================================================
+-- domain metadata
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_domain_meta_visibility
+    ON domain_meta (visibility);
+
+-- ============================================================
 -- 全文检索升级（可选，后续按需执行）
 -- ============================================================
 

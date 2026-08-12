@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/talesofai/okp/internal/access"
 	"github.com/talesofai/okp/internal/model"
 	"github.com/talesofai/okp/internal/store"
 )
@@ -145,12 +146,13 @@ func EmbedConcept(id string) error {
 
 // EmbedBatch 批量处理 embed_status=pending 或 failed 的 concepts
 // 返回 (processed, errors)
-func EmbedBatch(domain string, limit int) (int, int) {
+func EmbedBatch(userID, domain string, limit int) (int, int) {
 	if limit <= 0 {
 		limit = 1000
 	}
 
 	q := store.DB.Model(&model.Concept{}).
+		Scopes(access.ScopeWritableConcepts(userID)).
 		Where("embed_status IN ('pending','failed')").
 		Limit(limit)
 	if domain != "" {
@@ -215,13 +217,14 @@ func EmbedBatch(domain string, limit int) (int, int) {
 }
 
 // EmbedStats 返回 embedding 状态统计
-func EmbedStats() map[string]int64 {
+func EmbedStats(userID string) map[string]int64 {
 	type row struct {
 		Status string
 		Count  int64
 	}
 	var rows []row
 	store.DB.Model(&model.Concept{}).
+		Scopes(access.ScopeReadableConcepts(userID)).
 		Select("embed_status as status, count(*) as count").
 		Group("embed_status").
 		Scan(&rows)

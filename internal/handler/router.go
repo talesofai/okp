@@ -23,7 +23,6 @@ import (
 	"github.com/talesofai/okp/internal/store"
 )
 
-
 // NewRouter 构建 HTTP 路由（chi）。
 func NewRouter() http.Handler {
 	r := chi.NewRouter()
@@ -50,6 +49,7 @@ func NewRouter() http.Handler {
 	r.Get("/api/v1/concepts/sample", sampleConcepts)
 	r.Put("/api/v1/concepts/*", upsertConcept)
 	r.Get("/api/v1/concepts/*", getConcept)
+	r.Delete("/api/v1/concepts/*", deleteConcept)
 
 	// links 独立资源: /api/v1/links/{id-with-slashes}
 	r.Get("/api/v1/links/*", getConceptLinks)
@@ -59,6 +59,7 @@ func NewRouter() http.Handler {
 	r.Get("/api/v1/domains/{domain}/export", exportDomain)
 	r.Get("/api/v1/domains/{domain}", getDomainMeta)
 	r.Put("/api/v1/domains/{domain}", putDomainMeta)
+	r.Delete("/api/v1/domains/{domain}", deleteDomain)
 	r.Get("/api/v1/embed/stats", embedStats)
 	r.Post("/api/v1/embed/batch", embedBatch)
 	r.Get("/api/v1/health", healthCheck)
@@ -90,6 +91,34 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func requireReadableDomain(w http.ResponseWriter, r *http.Request, domain string) bool {
+	exists, err := service.DomainExists(domain)
+	if err != nil {
+		slog.Error("domain existence lookup failed", "domain", domain, "error", err)
+		writeError(w, http.StatusInternalServerError, "permission check failed")
+		return false
+	}
+	if !exists || !auth.CanReadDomain(auth.UserIDFromContext(r), domain) {
+		writeError(w, http.StatusNotFound, "domain not found: "+domain)
+		return false
+	}
+	return true
+}
+
+func rejectUnreadableExistingDomain(w http.ResponseWriter, r *http.Request, domain string) bool {
+	exists, err := service.DomainExists(domain)
+	if err != nil {
+		slog.Error("domain existence lookup failed", "domain", domain, "error", err)
+		writeError(w, http.StatusInternalServerError, "permission check failed")
+		return false
+	}
+	if exists && !auth.CanReadDomain(auth.UserIDFromContext(r), domain) {
+		writeError(w, http.StatusNotFound, "domain not found: "+domain)
+		return false
+	}
+	return true
 }
 
 // ── 端点 ────────────────────────────────────────────────────
@@ -201,7 +230,28 @@ func upsertConcept(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "domain 不能为空")
 		return
 	}
-	if !auth.CanWriteDomain(auth.UserIDFromContext(r), c.Domain) {
+	userID := auth.UserIDFromContext(r)
+	if !rejectUnreadableExistingDomain(w, r, c.Domain) {
+		return
+	}
+	var existing model.Concept
+	err := store.DB.Select("domain").Where("id = ?", id).First(&existing).Error
+	if err == nil {
+		if !auth.CanReadDomain(userID, existing.Domain) {
+			writeError(w, http.StatusNotFound, "concept 不存在: "+id)
+			return
+		}
+		if existing.Domain != c.Domain {
+			writeError(w, http.StatusConflict, "concept domain cannot be changed; delete and recreate it explicitly")
+			return
+		}
+	}
+	if err != nil && err != gorm.ErrRecordNotFound {
+		slog.Error("concept authorization lookup failed", "id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "permission check failed")
+		return
+	}
+	if !auth.CanWriteDomain(userID, c.Domain) {
 		writeError(w, http.StatusForbidden, "write access denied: requires admin or domain host/writer")
 		return
 	}
@@ -230,7 +280,6 @@ func batchUpsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check write permission for all domains in the batch
 	userID := auth.UserIDFromContext(r)
 	seen := map[string]bool{}
 	for _, c := range concepts {
@@ -240,8 +289,42 @@ func batchUpsert(w http.ResponseWriter, r *http.Request) {
 		}
 		if !seen[c.Domain] {
 			seen[c.Domain] = true
+			if !rejectUnreadableExistingDomain(w, r, c.Domain) {
+				return
+			}
 			if !auth.CanWriteDomain(userID, c.Domain) {
 				writeError(w, http.StatusForbidden, "write access denied for domain: "+c.Domain)
+				return
+			}
+		}
+	}
+
+	ids := make([]string, 0, len(concepts))
+	for _, c := range concepts {
+		ids = append(ids, c.ID)
+	}
+	var stored []model.Concept
+	if len(ids) > 0 {
+		if err := store.DB.Select("id", "domain").Where("id IN ?", ids).Find(&stored).Error; err != nil {
+			slog.Error("batch authorization lookup failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "permission check failed")
+			return
+		}
+	}
+	storedDomains := make(map[string]string, len(stored))
+	for _, c := range stored {
+		storedDomains[c.ID] = c.Domain
+	}
+
+	// Existing IDs cannot be moved between domains.
+	for _, c := range concepts {
+		if storedDomain, exists := storedDomains[c.ID]; exists {
+			if !auth.CanReadDomain(userID, storedDomain) {
+				writeError(w, http.StatusNotFound, "concept 不存在: "+c.ID)
+				return
+			}
+			if storedDomain != c.Domain {
+				writeError(w, http.StatusConflict, "concept domain cannot be changed: "+c.ID)
 				return
 			}
 		}
@@ -269,6 +352,7 @@ func listConcepts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	params := service.SearchParams{
+		UserID:   auth.UserIDFromContext(r),
 		Query:    q.Get("q"),
 		Domain:   q.Get("domain"),
 		Type:     q.Get("type"),
@@ -299,17 +383,50 @@ func getConcept(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "concept 不存在: "+id)
 		return
 	}
+	if !auth.CanReadDomain(auth.UserIDFromContext(r), c.Domain) {
+		writeError(w, http.StatusNotFound, "concept 不存在: "+id)
+		return
+	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+// DELETE /api/v1/concepts/{id}
+func deleteConcept(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "*")
+	c, err := service.GetConcept(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "concept 不存在: "+id)
+		return
+	}
+	if !auth.CanReadDomain(auth.UserIDFromContext(r), c.Domain) {
+		writeError(w, http.StatusNotFound, "concept 不存在: "+id)
+		return
+	}
+	if !auth.CanWriteDomain(auth.UserIDFromContext(r), c.Domain) {
+		writeError(w, http.StatusForbidden, "delete access denied: requires public-domain admin or domain host/writer")
+		return
+	}
+	if err := service.DeleteConcept(id); err != nil {
+		slog.Error("delete concept failed", "id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // GET /api/v1/concepts/{id}/links
 func getConceptLinks(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "*")
+	c, err := service.GetConcept(id)
+	if err != nil || !auth.CanReadDomain(auth.UserIDFromContext(r), c.Domain) {
+		writeError(w, http.StatusNotFound, "concept 不存在: "+id)
+		return
+	}
 	q := r.URL.Query()
 	limit := parseIntDefault(q.Get("limit"), 50)
 	offset := parseIntDefault(q.Get("offset"), 0)
 
-	outgoing, backlinks, totalOut, totalBack, err := service.GetLinks(id, limit, offset)
+	outgoing, backlinks, totalOut, totalBack, err := service.GetLinks(auth.UserIDFromContext(r), id, limit, offset)
 	if err != nil {
 		slog.Error("获取链接失败", "error", err)
 		writeError(w, http.StatusInternalServerError, "获取链接失败")
@@ -327,6 +444,19 @@ func getConceptLinks(w http.ResponseWriter, r *http.Request) {
 // PUT /api/v1/concepts/{id}/links
 func putConceptLinks(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "*")
+	c, err := service.GetConcept(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "concept 不存在: "+id)
+		return
+	}
+	if !auth.CanReadDomain(auth.UserIDFromContext(r), c.Domain) {
+		writeError(w, http.StatusNotFound, "concept 不存在: "+id)
+		return
+	}
+	if !auth.CanWriteDomain(auth.UserIDFromContext(r), c.Domain) {
+		writeError(w, http.StatusForbidden, "write access denied: requires admin or domain host/writer")
+		return
+	}
 
 	var body struct {
 		Links []struct {
@@ -350,7 +480,7 @@ func putConceptLinks(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/domains?q=
 func listDomains(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
-	domains, err := service.ListDomains(q)
+	domains, err := service.ListDomains(auth.UserIDFromContext(r), q)
 	if err != nil {
 		slog.Error("获取领域列表失败", "error", err)
 		writeError(w, http.StatusInternalServerError, "获取领域列表失败")
@@ -362,6 +492,9 @@ func listDomains(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/domains/{domain}/export
 func exportDomain(w http.ResponseWriter, r *http.Request) {
 	domain := chi.URLParam(r, "domain")
+	if !requireReadableDomain(w, r, domain) {
+		return
+	}
 	outDir := r.URL.Query().Get("out")
 	if outDir == "" {
 		outDir = "./okp-export"
@@ -461,6 +594,9 @@ func updateUserRole(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/domains/{domain}
 func getDomainMeta(w http.ResponseWriter, r *http.Request) {
 	domain := chi.URLParam(r, "domain")
+	if !requireReadableDomain(w, r, domain) {
+		return
+	}
 	meta, err := service.GetDomainMeta(domain)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "domain 没有 README: "+domain)
@@ -470,11 +606,12 @@ func getDomainMeta(w http.ResponseWriter, r *http.Request) {
 }
 
 // PUT /api/v1/domains/{domain}
-// Body: {"readme": "...markdown..."}  或直接传 markdown 文本
+// Body: {"readme":"...markdown...","visibility":"public|private"}
 func putDomainMeta(w http.ResponseWriter, r *http.Request) {
 	domain := chi.URLParam(r, "domain")
 	var body struct {
-		Readme string `json:"readme"`
+		Readme     string `json:"readme"`
+		Visibility string `json:"visibility"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "JSON 解析失败: "+err.Error())
@@ -487,13 +624,44 @@ func putDomainMeta(w http.ResponseWriter, r *http.Request) {
 
 	userID := auth.UserIDFromContext(r)
 	var existing model.DomainMeta
-	domainExists := store.DB.Select("domain").Where("domain = ?", domain).First(&existing).Error == nil
-	if domainExists && !auth.CanWriteDomain(userID, domain) {
-		writeError(w, http.StatusForbidden, "write access denied: requires admin or domain host/writer")
+	metaErr := store.DB.Select("domain", "visibility").Where("domain = ?", domain).First(&existing).Error
+	if metaErr != nil && metaErr != gorm.ErrRecordNotFound {
+		slog.Error("domain authorization lookup failed", "domain", domain, "error", metaErr)
+		writeError(w, http.StatusInternalServerError, "permission check failed")
+		return
+	}
+	domainExists, err := service.DomainExists(domain)
+	if err != nil {
+		slog.Error("domain existence lookup failed", "domain", domain, "error", err)
+		writeError(w, http.StatusInternalServerError, "permission check failed")
+		return
+	}
+	if domainExists && !auth.CanReadDomain(userID, domain) {
+		writeError(w, http.StatusNotFound, "domain not found: "+domain)
+		return
+	}
+	if domainExists && !auth.CanManageDomain(userID, domain) {
+		writeError(w, http.StatusForbidden, "manage access denied: requires public-domain admin or domain host")
 		return
 	}
 
-	meta, created, err := service.PutDomainMeta(domain, body.Readme, userID)
+	visibility := body.Visibility
+	if visibility == "" {
+		visibility = "public"
+		if metaErr == nil && existing.Visibility != "" {
+			visibility = existing.Visibility
+		}
+	}
+	if visibility != "public" && visibility != "private" {
+		writeError(w, http.StatusBadRequest, "visibility must be 'public' or 'private'")
+		return
+	}
+	if domainExists && visibility == "private" && (metaErr != nil || existing.Visibility != "private") && !auth.IsDomainHost(userID, domain) {
+		writeError(w, http.StatusForbidden, "only the domain host can make a domain private")
+		return
+	}
+
+	meta, created, err := service.PutDomainMeta(domain, body.Readme, visibility, userID)
 	if err != nil {
 		slog.Error("domain meta 写入失败", "domain", domain, "user_id", userID, "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -506,11 +674,33 @@ func putDomainMeta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, meta)
 }
 
+// DELETE /api/v1/domains/{domain}
+func deleteDomain(w http.ResponseWriter, r *http.Request) {
+	domain := chi.URLParam(r, "domain")
+	if !requireReadableDomain(w, r, domain) {
+		return
+	}
+	if !auth.CanManageDomain(auth.UserIDFromContext(r), domain) {
+		writeError(w, http.StatusForbidden, "delete access denied: requires public-domain admin or domain host")
+		return
+	}
+	if err := service.DeleteDomain(domain); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			writeError(w, http.StatusNotFound, "domain not found: "+domain)
+			return
+		}
+		slog.Error("delete domain failed", "domain", domain, "error", err)
+		writeError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // GET /api/v1/concepts/sample
 func sampleConcepts(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit := parseIntDefault(q.Get("limit"), 5)
-	results, err := service.Sample(q.Get("domain"), q.Get("type"), limit)
+	results, err := service.Sample(auth.UserIDFromContext(r), q.Get("domain"), q.Get("type"), limit)
 	if err != nil {
 		slog.Error("采样失败", "error", err)
 		writeError(w, http.StatusInternalServerError, "采样失败")
@@ -521,7 +711,7 @@ func sampleConcepts(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/embed/stats
 func embedStats(w http.ResponseWriter, r *http.Request) {
-	stats := service.EmbedStats()
+	stats := service.EmbedStats(auth.UserIDFromContext(r))
 	writeJSON(w, http.StatusOK, stats)
 }
 
@@ -530,8 +720,15 @@ func embedBatch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	domain := q.Get("domain")
 	limit := parseIntDefault(q.Get("limit"), 500)
+	if domain != "" && !requireReadableDomain(w, r, domain) {
+		return
+	}
+	if domain != "" && !auth.CanWriteDomain(auth.UserIDFromContext(r), domain) {
+		writeError(w, http.StatusForbidden, "write access denied: requires public-domain admin or domain host/writer")
+		return
+	}
 
-	processed, errors := service.EmbedBatch(domain, limit)
+	processed, errors := service.EmbedBatch(auth.UserIDFromContext(r), domain, limit)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"processed": processed,
 		"errors":    errors,
@@ -543,6 +740,9 @@ func embedBatch(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/domains/{domain}/members
 func listDomainMembers(w http.ResponseWriter, r *http.Request) {
 	domain := chi.URLParam(r, "domain")
+	if !requireReadableDomain(w, r, domain) {
+		return
+	}
 	type memberResponse struct {
 		Domain      string    `json:"domain"`
 		UserID      string    `json:"user_id"`
@@ -573,9 +773,19 @@ func listDomainMembers(w http.ResponseWriter, r *http.Request) {
 func createInvite(w http.ResponseWriter, r *http.Request) {
 	domain := chi.URLParam(r, "domain")
 	userID := auth.UserIDFromContext(r)
-	userRole := auth.ResolveDomainRole(userID, domain)
-	if userRole != "admin" && userRole != "host" {
-		writeError(w, http.StatusForbidden, "only admin or host can create invites")
+	if !requireReadableDomain(w, r, domain) {
+		return
+	}
+	if !auth.CanManageDomain(userID, domain) {
+		writeError(w, http.StatusForbidden, "only public-domain admin or domain host can create invites")
+		return
+	}
+	visibility := "public"
+	if meta, err := service.GetDomainMeta(domain); err == nil && meta.Visibility != "" {
+		visibility = meta.Visibility
+	} else if err != nil && err != gorm.ErrRecordNotFound {
+		slog.Error("domain visibility lookup failed", "domain", domain, "error", err)
+		writeError(w, http.StatusInternalServerError, "permission check failed")
 		return
 	}
 
@@ -591,9 +801,8 @@ func createInvite(w http.ResponseWriter, r *http.Request) {
 	if body.Role == "" {
 		body.Role = "writer"
 	}
-	// Phase 1: public domains only invite writers. reader/host not allowed here.
-	if body.Role != "writer" {
-		writeError(w, http.StatusBadRequest, "role must be writer")
+	if body.Role != "writer" && !(visibility == "private" && body.Role == "reader") {
+		writeError(w, http.StatusBadRequest, "role must be writer; private domains may also invite reader")
 		return
 	}
 	if body.ExpiresInHours <= 0 {
@@ -653,9 +862,12 @@ func createInvite(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/domains/{domain}/invites
 func listInvites(w http.ResponseWriter, r *http.Request) {
 	domain := chi.URLParam(r, "domain")
-	userRole := auth.ResolveDomainRole(auth.UserIDFromContext(r), domain)
-	if userRole != "admin" && userRole != "host" {
-		writeError(w, http.StatusForbidden, "only admin or host can view invites")
+	userID := auth.UserIDFromContext(r)
+	if !requireReadableDomain(w, r, domain) {
+		return
+	}
+	if !auth.CanManageDomain(userID, domain) {
+		writeError(w, http.StatusForbidden, "only public-domain admin or domain host can view invites")
 		return
 	}
 	var invites []model.DomainInvite
@@ -696,9 +908,12 @@ func listInvites(w http.ResponseWriter, r *http.Request) {
 func revokeInvite(w http.ResponseWriter, r *http.Request) {
 	domain := chi.URLParam(r, "domain")
 	id := chi.URLParam(r, "id")
-	userRole := auth.ResolveDomainRole(auth.UserIDFromContext(r), domain)
-	if userRole != "admin" && userRole != "host" {
-		writeError(w, http.StatusForbidden, "only admin or host can revoke invites")
+	userID := auth.UserIDFromContext(r)
+	if !requireReadableDomain(w, r, domain) {
+		return
+	}
+	if !auth.CanManageDomain(userID, domain) {
+		writeError(w, http.StatusForbidden, "only public-domain admin or domain host can revoke invites")
 		return
 	}
 	now := time.Now().UTC()
@@ -763,6 +978,30 @@ func acceptInvite(w http.ResponseWriter, r *http.Request) {
 			return errInviteExhausted
 		}
 		if invite.Role != "reader" && invite.Role != "writer" {
+			return errInviteInvalidRole
+		}
+		var domainCount int64
+		if err := tx.Model(&model.DomainMeta{}).Where("domain = ?", invite.Domain).Count(&domainCount).Error; err != nil {
+			return err
+		}
+		if domainCount == 0 {
+			if err := tx.Model(&model.Concept{}).Where("domain = ?", invite.Domain).Count(&domainCount).Error; err != nil {
+				return err
+			}
+		}
+		if domainCount == 0 {
+			return errInviteNotFound
+		}
+		visibility := "public"
+		var meta model.DomainMeta
+		if err := tx.Select("visibility").Where("domain = ?", invite.Domain).First(&meta).Error; err == nil {
+			if meta.Visibility != "" {
+				visibility = meta.Visibility
+			}
+		} else if err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if invite.Role == "reader" && visibility != "private" {
 			return errInviteInvalidRole
 		}
 

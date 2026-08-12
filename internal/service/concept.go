@@ -184,6 +184,24 @@ func GetConcept(id string) (*model.Concept, error) {
 	return &c, nil
 }
 
+// DeleteConcept removes one concept, its revision history, and every link that
+// references it.
+func DeleteConcept(id string) error {
+	return store.DB.Transaction(func(tx *gorm.DB) error {
+		var c model.Concept
+		if err := tx.Where("id = ?", id).First(&c).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("from_id = ? OR to_id = ?", id, id).Delete(&model.Link{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("concept_id = ?", id).Delete(&model.Revision{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&c).Error
+	})
+}
+
 // ── 去重 ────────────────────────────────────────────────────
 
 // checkDuplicate 在同 domain+type 下检查重复。
@@ -255,9 +273,8 @@ func saveRevision(c *model.Concept, action string) {
 
 // ── Links ────────────────────────────────────────────────────
 
-// GetLinks 获取 concept 的出链和反向引用。
 // GetLinks 获取 concept 的出链和反向引用，支持分页。
-func GetLinks(id string, limit, offset int) (outgoing []model.Link, backlinks []model.Link, totalOut int64, totalBack int64, err error) {
+func GetLinks(userID, id string, limit, offset int) (outgoing []model.Link, backlinks []model.Link, totalOut int64, totalBack int64, err error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -265,11 +282,48 @@ func GetLinks(id string, limit, offset int) (outgoing []model.Link, backlinks []
 		limit = 200
 	}
 
-	db := store.DB.Model(&model.Link{})
-	if err := db.Where("from_id = ?", id).Count(&totalOut).Limit(limit).Offset(offset).Find(&outgoing).Error; err != nil {
+	outgoingQuery := store.DB.Model(&model.Link{}).
+		Where("from_id = ?", id).
+		Where(`NOT EXISTS (
+			SELECT 1
+			FROM domain_meta dm
+			WHERE dm.visibility = 'private'
+			AND (
+				substr(links.to_id, 1, length(dm.domain) + 1) = dm.domain || '/'
+				OR EXISTS (
+					SELECT 1 FROM concepts target
+					WHERE target.id = links.to_id AND target.domain = dm.domain
+				)
+			)
+			AND NOT EXISTS (
+				SELECT 1 FROM domain_members dmbr
+				WHERE dmbr.domain = dm.domain AND dmbr.user_id = ?
+				AND dmbr.role IN ('host', 'writer', 'reader')
+			)
+		)`, userID)
+	if err := outgoingQuery.Count(&totalOut).Limit(limit).Offset(offset).Find(&outgoing).Error; err != nil {
 		return nil, nil, 0, 0, err
 	}
-	if err := db.Where("to_id = ?", id).Count(&totalBack).Limit(limit).Offset(offset).Find(&backlinks).Error; err != nil {
+	backlinkQuery := store.DB.Model(&model.Link{}).
+		Where("to_id = ?", id).
+		Where(`NOT EXISTS (
+			SELECT 1
+			FROM domain_meta dm
+			WHERE dm.visibility = 'private'
+			AND (
+				substr(links.from_id, 1, length(dm.domain) + 1) = dm.domain || '/'
+				OR EXISTS (
+					SELECT 1 FROM concepts source
+					WHERE source.id = links.from_id AND source.domain = dm.domain
+				)
+			)
+			AND NOT EXISTS (
+				SELECT 1 FROM domain_members dmbr
+				WHERE dmbr.domain = dm.domain AND dmbr.user_id = ?
+				AND dmbr.role IN ('host', 'writer', 'reader')
+			)
+		)`, userID)
+	if err := backlinkQuery.Count(&totalBack).Limit(limit).Offset(offset).Find(&backlinks).Error; err != nil {
 		return nil, nil, 0, 0, err
 	}
 	return outgoing, backlinks, totalOut, totalBack, nil

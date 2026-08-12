@@ -4,7 +4,7 @@ import "time"
 
 // DomainInvite 记录 domain 邀请码。
 // CodeHash 存规范化邀请码的 SHA-256 hex；明文 code 只在创建时返回一次。
-// 当前阶段公开 domain 只邀请 writer；reader 预留给后续 private domain。
+// 公开 domain 邀请 writer；private domain 可邀请 reader 或 writer。
 // 不允许通过邀请授予 host。
 type DomainInvite struct {
 	ID         string     `gorm:"primaryKey;type:text" json:"id"`

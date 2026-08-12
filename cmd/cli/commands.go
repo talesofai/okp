@@ -141,6 +141,40 @@ func cmdGet() *cobra.Command {
 	}
 }
 
+func cmdDelete() *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "删除一个 concept 及其 links/revisions",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return fmt.Errorf("删除 concept 需要显式传入 --yes")
+			}
+			id := args[0]
+			resp, err := doRequest("DELETE", "/api/v1/concepts/"+escapeConceptID(id), nil)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			if _, err := readRaw(resp); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "concept %s 已删除\n", id)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "确认永久删除")
+	return cmd
+}
+
+func escapeConceptID(id string) string {
+	parts := strings.Split(id, "/")
+	for i := range parts {
+		parts[i] = url.PathEscape(parts[i])
+	}
+	return strings.Join(parts, "/")
+}
+
 func cmdSearch() *cobra.Command {
 	var domain, typeFilter, scenario, sort string
 	var tags, filters []string
@@ -363,7 +397,8 @@ func cmdDomains() *cobra.Command {
 }
 
 func cmdDomain() *cobra.Command {
-	var setFile string
+	var setFile, visibility string
+	var deleteDomain, yes bool
 	cmd := &cobra.Command{
 		Use:   "domain <domain>",
 		Short: "查看或设置 domain README 和 schema",
@@ -374,6 +409,25 @@ func cmdDomain() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			domain := args[0]
+			path := "/api/v1/domains/" + url.PathEscape(domain)
+
+			if deleteDomain {
+				if setFile != "" || visibility != "" {
+					return fmt.Errorf("--delete 不能与 --set 或 --visibility 同时使用")
+				}
+				if !yes {
+					return fmt.Errorf("删除 domain 需要显式传入 --yes")
+				}
+				resp, err := doRequest("DELETE", path, nil)
+				if err != nil {
+					return fmt.Errorf("请求失败: %w", err)
+				}
+				if _, err := readRaw(resp); err != nil {
+					return err
+				}
+				fmt.Fprintf(os.Stderr, "domain %s 及其全部数据已删除\n", domain)
+				return nil
+			}
 
 			if setFile != "" {
 				b, err := os.ReadFile(setFile)
@@ -381,7 +435,13 @@ func cmdDomain() *cobra.Command {
 					return fmt.Errorf("读取文件失败: %w", err)
 				}
 				body := map[string]any{"readme": string(b)}
-				resp, err := doRequest("PUT", "/api/v1/domains/"+domain, body)
+				if visibility != "" {
+					if visibility != "public" && visibility != "private" {
+						return fmt.Errorf("--visibility 必须是 public 或 private")
+					}
+					body["visibility"] = visibility
+				}
+				resp, err := doRequest("PUT", path, body)
 				if err != nil {
 					return fmt.Errorf("请求失败: %w", err)
 				}
@@ -394,9 +454,12 @@ func cmdDomain() *cobra.Command {
 				prettyPrint(result)
 				return nil
 			}
+			if visibility != "" {
+				return fmt.Errorf("--visibility 只能与 --set 一起使用")
+			}
 
 			// 读取 README——直接打印 markdown，供 agent 阅读
-			resp, err := doRequest("GET", "/api/v1/domains/"+domain, nil)
+			resp, err := doRequest("GET", path, nil)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}
@@ -406,6 +469,9 @@ func cmdDomain() *cobra.Command {
 				return nil
 			}
 			if readme, ok := result["readme"].(string); ok && readme != "" {
+				if v, ok := result["visibility"].(string); ok {
+					fmt.Fprintf(os.Stderr, "visibility: %s\n", v)
+				}
 				fmt.Println(readme)
 			} else {
 				fmt.Fprintf(os.Stderr, "domain %s 暂无 README\n", domain)
@@ -414,6 +480,9 @@ func cmdDomain() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&setFile, "set", "", "从 markdown 文件更新 README")
+	cmd.Flags().StringVar(&visibility, "visibility", "", "domain 可见性: public|private（仅与 --set 一起使用）")
+	cmd.Flags().BoolVar(&deleteDomain, "delete", false, "永久删除 domain 及其 concepts/links/revisions")
+	cmd.Flags().BoolVar(&yes, "yes", false, "确认永久删除")
 	return cmd
 }
 
@@ -456,7 +525,7 @@ func cmdInvite() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "invite",
 		Short: "domain 邀请码管理（host/admin）",
-		Long: `管理 domain writer 邀请码。
+		Long: `管理 domain 邀请码。公开 domain 可邀请 writer；private domain 可邀请 reader 或 writer。
 
 创建后只显示一次明文 code；对方打开固定 Work 链接后输入邀请码。
 不依赖 Work 路由。`,
@@ -467,7 +536,7 @@ func cmdInvite() *cobra.Command {
 	var role string
 	createCmd := &cobra.Command{
 		Use:   "create <domain>",
-		Short: "创建 writer 邀请码",
+		Short: "创建 reader/writer 邀请码",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			domain := args[0]
@@ -497,7 +566,7 @@ func cmdInvite() *cobra.Command {
 			return nil
 		},
 	}
-	createCmd.Flags().StringVar(&role, "role", "writer", "邀请角色（当前仅支持 writer）")
+	createCmd.Flags().StringVar(&role, "role", "writer", "邀请角色: writer；private domain 也可用 reader")
 	createCmd.Flags().IntVar(&expiresHours, "expires-hours", 72, "过期小时数")
 	createCmd.Flags().IntVar(&maxUses, "max-uses", 1, "最大使用次数")
 	cmd.AddCommand(createCmd)
@@ -597,4 +666,3 @@ func cmdInvite() *cobra.Command {
 
 	return cmd
 }
-
