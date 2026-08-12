@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/talesofai/okp/internal/model"
+	"github.com/talesofai/okp/internal/service"
 )
 
 // ── HTTP 辅助 ────────────────────────────────────────────────
@@ -102,15 +104,14 @@ func cmdPut() *cobra.Command {
 			// 确保 id 与 URL 一致
 			body["id"] = id
 
-			resp, err := doRequest("PUT", "/api/v1/concepts/"+id, body)
+			resp, err := doRequest("PUT", "/api/v1/concepts/"+escapeConceptID(id), body)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}
 
 			var result map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Println(err)
-				return nil
+				return err
 			}
 			prettyPrint(result)
 			return nil
@@ -126,14 +127,13 @@ func cmdGet() *cobra.Command {
 		Short: "获取 concept",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			resp, err := doRequest("GET", "/api/v1/concepts/"+args[0], nil)
+			resp, err := doRequest("GET", "/api/v1/concepts/"+escapeConceptID(args[0]), nil)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}
 			var result map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Println(err)
-				return nil
+				return err
 			}
 			prettyPrint(result)
 			return nil
@@ -220,8 +220,7 @@ func cmdSearch() *cobra.Command {
 			}
 			var results []map[string]any
 			if err := readJSON(resp, &results); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return nil
+				return err
 			}
 			fmt.Fprintf(os.Stderr, "共 %d 条结果\n", len(results))
 			prettyPrint(results)
@@ -271,8 +270,7 @@ func cmdBatch() *cobra.Command {
 			}
 			var result map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Println(err)
-				return nil
+				return err
 			}
 			prettyPrint(result)
 			return nil
@@ -288,15 +286,14 @@ func cmdLinks() *cobra.Command {
 		Short: "查看 concept 的出链和反向引用",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := fmt.Sprintf("/api/v1/links/%s?limit=%d&offset=%d", args[0], limit, offset)
+			path := fmt.Sprintf("/api/v1/links/%s?limit=%d&offset=%d", escapeConceptID(args[0]), limit, offset)
 			resp, err := doRequest("GET", path, nil)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}
 			var result map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Println(err)
-				return nil
+				return err
 			}
 			fmt.Printf("outgoing: %s, backlinks: %s\n",
 				resp.Header.Get("X-Total-Outgoing"), resp.Header.Get("X-Total-Backlinks"))
@@ -319,15 +316,15 @@ func cmdExport() *cobra.Command {
 			if outDir == "" {
 				outDir = "./okp-export"
 			}
-			path := fmt.Sprintf("/api/v1/domains/%s/export?out=%s", args[0], outDir)
+			params := url.Values{"out": {outDir}}
+			path := "/api/v1/domains/" + url.PathEscape(args[0]) + "/export?" + params.Encode()
 			resp, err := doRequest("GET", path, nil)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}
 			var result map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Println(err)
-				return nil
+				return err
 			}
 			prettyPrint(result)
 			return nil
@@ -342,20 +339,23 @@ func cmdLint() *cobra.Command {
 		Use:   "lint <file.json>",
 		Short: "本地校验 concept（L2 软门禁）",
 		Long: `对单个 concept 执行本地校验（schema + 建议检查）。
-区别于 API 的 L1 硬门禁：lint 只读不写，供提交前自检使用。
-当前 lint 通过 API 执行；后续可内嵌本地校验器以完全离线。`,
+区别于 API 的 L1 硬门禁：lint 完全在本地执行，只读不写，供提交前自检使用。`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			b, err := os.ReadFile(args[0])
 			if err != nil {
 				return fmt.Errorf("读取文件失败: %w", err)
 			}
-			// lint 目前通过 API 的 validate-only 路径执行
-			// 未来可本地内嵌 LintConcept
-			_ = b
-			fmt.Println("提示：lint 目前通过 API 校验执行。使用 okp put --dry-run 预览校验结果。")
-			// 简化版：直接调 put 的校验逻辑
-			// 完整实现需要 API 支持 validate-only 或本地内嵌 service.LintConcept
+			var concept model.Concept
+			if err := json.Unmarshal(b, &concept); err != nil {
+				return fmt.Errorf("JSON 解析失败: %w", err)
+			}
+
+			result := service.LintConcept(&concept)
+			prettyPrint(result)
+			if len(result.Errors) > 0 {
+				return fmt.Errorf("lint 失败: %d 个错误", len(result.Errors))
+			}
 			return nil
 		},
 	}
@@ -382,8 +382,7 @@ func cmdDomains() *cobra.Command {
 			}
 			var result []map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Println(err)
-				return nil
+				return err
 			}
 			fmt.Fprintf(os.Stderr, "共 %d 个领域\n", len(result))
 			prettyPrint(result)
@@ -447,8 +446,7 @@ func cmdDomain() *cobra.Command {
 				}
 				var result map[string]any
 				if err := readJSON(resp, &result); err != nil {
-					fmt.Fprintln(os.Stderr, err)
-					return nil
+					return err
 				}
 				fmt.Fprintf(os.Stderr, "✅ domain %s README 已更新\n", domain)
 				prettyPrint(result)
@@ -465,8 +463,7 @@ func cmdDomain() *cobra.Command {
 			}
 			var result map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return nil
+				return err
 			}
 			if readme, ok := result["readme"].(string); ok && readme != "" {
 				if v, ok := result["visibility"].(string); ok {
@@ -507,8 +504,7 @@ func cmdSample() *cobra.Command {
 			}
 			var results []map[string]any
 			if err := readJSON(resp, &results); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return nil
+				return err
 			}
 			fmt.Fprintf(os.Stderr, "采样 %d 条\n", len(results))
 			prettyPrint(results)
@@ -551,8 +547,7 @@ func cmdInvite() *cobra.Command {
 			}
 			var result map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return nil
+				return err
 			}
 			if code, ok := result["code"].(string); ok {
 				fmt.Fprintf(os.Stderr, "邀请码（只显示一次）: %s\n", code)
@@ -584,8 +579,7 @@ func cmdInvite() *cobra.Command {
 			}
 			var result []map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return nil
+				return err
 			}
 			fmt.Fprintf(os.Stderr, "共 %d 条邀请\n", len(result))
 			prettyPrint(result)
@@ -608,8 +602,7 @@ func cmdInvite() *cobra.Command {
 			}
 			var result map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return nil
+				return err
 			}
 			prettyPrint(result)
 			return nil
@@ -630,8 +623,7 @@ func cmdInvite() *cobra.Command {
 			}
 			var result map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return nil
+				return err
 			}
 			if domain, ok := result["domain"].(string); ok {
 				fmt.Fprintf(os.Stderr, "✅ 已加入 domain %s\n", domain)
@@ -655,8 +647,7 @@ func cmdInvite() *cobra.Command {
 			}
 			var result []map[string]any
 			if err := readJSON(resp, &result); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return nil
+				return err
 			}
 			prettyPrint(result)
 			return nil

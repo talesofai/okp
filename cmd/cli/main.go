@@ -13,8 +13,9 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "okp",
-		Short: "Open Knowledge Protocol CLI",
+		Use:     "okp",
+		Short:   "Open Knowledge Protocol CLI",
+		Version: version,
 		Long: `okp is the CLI for Open Knowledge Protocol.
 Create, search, and manage concepts across public and private domains.
 

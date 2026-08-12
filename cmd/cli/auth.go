@@ -303,43 +303,47 @@ func cmdAuthWhoami() *cobra.Command {
 	return &cobra.Command{
 		Use:   "whoami",
 		Short: "显示当前用户信息",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Try execution token first
-			if t := os.Getenv("COHUB_EXECUTION_TOKEN"); t != "" {
-				fmt.Println("认证方式: execution grant (cohub sandbox)")
-				fmt.Printf("user: %s\n", os.Getenv("COHUB_USER_UUID"))
-				return nil
-			}
-
-			s := readSession()
-			if s == nil {
+			if apiToken == "" {
 				fmt.Println("未登录。运行 okp auth login 登录。")
 				return nil
 			}
 
-			// Try to decode ID token
-			if s.IDToken != "" {
-				parts := strings.Split(s.IDToken, ".")
-				if len(parts) >= 2 {
-					payload, _ := base64Decode(parts[1])
-					var claims map[string]any
-					json.Unmarshal(payload, &claims)
-					fmt.Printf("认证方式: logto (device flow)\n")
-					if name, ok := claims["nick_name"]; ok {
-						fmt.Printf("昵称: %v\n", name)
-					}
-					if email, ok := claims["email"]; ok {
-						fmt.Printf("邮箱: %v\n", email)
-					}
-					if uuid, ok := claims["talesofai_uuid"]; ok {
-						fmt.Printf("UUID: %v\n", uuid)
-					}
-					fmt.Printf("token 过期: %s\n", time.UnixMilli(s.AccessTokenExpiresAt).Format(time.RFC3339))
-					return nil
-				}
+			authMethod := "API token"
+			if os.Getenv("OKP_API_TOKEN") != "" {
+				authMethod = "OKP_API_TOKEN"
+			} else if os.Getenv("COHUB_EXECUTION_TOKEN") != "" {
+				authMethod = "execution grant (cohub sandbox)"
+			} else if readSession() != nil {
+				authMethod = "logto (device flow)"
+			} else if readCohubToken() != "" {
+				authMethod = "cohub auth session"
 			}
-			fmt.Println("认证方式: logto (device flow)")
-			fmt.Printf("token 过期: %s\n", time.UnixMilli(s.AccessTokenExpiresAt).Format(time.RFC3339))
+
+			resp, err := doRequest("GET", "/api/v1/me", nil)
+			if err != nil {
+				return fmt.Errorf("请求失败: %w", err)
+			}
+			var me struct {
+				UUID        string `json:"uuid"`
+				Username    string `json:"username"`
+				DisplayName string `json:"display_name"`
+				Role        string `json:"role"`
+			}
+			if err := readJSON(resp, &me); err != nil {
+				return err
+			}
+
+			fmt.Printf("认证方式: %s\n", authMethod)
+			fmt.Printf("UUID: %s\n", me.UUID)
+			if me.Username != "" {
+				fmt.Printf("用户名: %s\n", me.Username)
+			}
+			if me.DisplayName != "" {
+				fmt.Printf("显示名: %s\n", me.DisplayName)
+			}
+			fmt.Printf("角色: %s\n", me.Role)
 			return nil
 		},
 	}
