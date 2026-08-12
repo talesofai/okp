@@ -29,6 +29,7 @@ skills/
   okp-import/      — 导入 skill（面向领域 owner 的 agent）
     references/   — 各 type 的 concept 模板和 golden examples
   okp-search/      — 搜索 skill（面向消费 agent）
+  embed.go         — go:embed shim，供 CLI `okp skills install` 内嵌安装
 ```
 
 ## API 端点
@@ -72,6 +73,8 @@ okp export <domain>   — 导出 OKF bundle 文件树到本地
 okp lint   <file>     — 本地校验
 okp domains           — 领域清单
 okp delete <id>       — 删除 concept
+okp skills install    — 安装/更新 agent skills 到 {dir}/.agents/skills/（默认当前目录，幂等）
+okp skills list       — 列出内置 skills 及版本
 ```
 
 ## 核心设计原则

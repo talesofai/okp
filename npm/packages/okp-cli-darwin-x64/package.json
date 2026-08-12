@@ -1,6 +1,6 @@
 {
   "name": "okp-cli-darwin-x64",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "okp CLI binary for darwin x64",
   "license": "MIT",
   "os": [

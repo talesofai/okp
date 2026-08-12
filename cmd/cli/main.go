@@ -50,6 +50,7 @@ Create, search, and manage concepts across public and private domains.
 	rootCmd.AddCommand(cmdDomain())
 	rootCmd.AddCommand(cmdSample())
 	rootCmd.AddCommand(cmdInvite())
+	rootCmd.AddCommand(cmdSkills())
 	rootCmd.AddCommand(cmdAuth())
 	rootCmd.AddCommand(cmdUpdate())
 
