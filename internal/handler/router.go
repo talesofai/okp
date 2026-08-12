@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -490,30 +491,44 @@ func listDomains(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/v1/domains/{domain}/export
+// 以 NDJSON 流返回该 domain 的全部 concept（每行一个 concept JSON，按 type, id 排序）。
+// 由调用方（如 okp CLI）负责在本地渲染 OKF bundle 文件树，服务端不写任何文件。
 func exportDomain(w http.ResponseWriter, r *http.Request) {
 	domain := chi.URLParam(r, "domain")
 	if !requireReadableDomain(w, r, domain) {
 		return
 	}
-	outDir := r.URL.Query().Get("out")
-	if outDir == "" {
-		outDir = "./okp-export"
-	}
 
-	bundlePath, err := service.ExportDomain(domain, outDir)
-	if err != nil {
-		if strings.Contains(err.Error(), "无 concept") {
-			writeError(w, http.StatusNotFound, err.Error())
-		} else {
-			slog.Error("导出失败", "error", err)
-			writeError(w, http.StatusInternalServerError, "导出失败: "+err.Error())
-		}
+	var count int64
+	if err := store.DB.Model(&model.Concept{}).Where("domain = ?", domain).Count(&count).Error; err != nil {
+		slog.Error("导出计数失败", "domain", domain, "error", err)
+		writeError(w, http.StatusInternalServerError, "导出失败")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
-		"domain": domain,
-		"path":   bundlePath,
-	})
+	if count == 0 {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("domain '%s' 下无 concept", domain))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+	w.Header().Set("X-Total-Count", itoa(count))
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+
+	var batch []model.Concept
+	err := store.DB.Where("domain = ?", domain).Order("type, id").
+		FindInBatches(&batch, 500, func(tx *gorm.DB, n int) error {
+			for i := range batch {
+				if err := enc.Encode(&batch[i]); err != nil {
+					return err
+				}
+			}
+			return nil
+		}).Error
+	if err != nil {
+		// 响应头已发出，无法再返回结构化错误；客户端会因流截断而失败。
+		slog.Error("导出流失败", "domain", domain, "error", err)
+	}
 }
 
 // ── 工具函数 ────────────────────────────────────────────────

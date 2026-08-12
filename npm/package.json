@@ -1,6 +1,6 @@
 {
   "name": "@markbangwu/okp",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "Open Knowledge Protocol CLI — search, import, and manage knowledge concepts.",
   "license": "MIT",
   "bin": {
@@ -10,10 +10,10 @@
     "okp.js"
   ],
   "optionalDependencies": {
-    "okp-cli-linux-x64": "1.1.3",
-    "okp-cli-linux-arm64": "1.1.3",
-    "okp-cli-darwin-x64": "1.1.3",
-    "okp-cli-darwin-arm64": "1.1.3"
+    "okp-cli-linux-x64": "1.1.4",
+    "okp-cli-linux-arm64": "1.1.4",
+    "okp-cli-darwin-x64": "1.1.4",
+    "okp-cli-darwin-arm64": "1.1.4"
   },
   "publishConfig": {
     "access": "public",

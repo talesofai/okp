@@ -144,4 +144,4 @@ okp links <id>
 
 - 知识导入 / 写权限 / 邀请码 → okp-import
 - domain README 维护 → `okp domain <domain> --set readme.md`
-- OKF bundle 导出 → `okp export <domain>`
+- OKF bundle 导出到本地 → `okp export <domain> --out <dir>`

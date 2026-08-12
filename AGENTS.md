@@ -41,7 +41,7 @@ GET    /api/v1/concepts                — list/search（domain/type/tag/status/
 GET    /api/v1/concepts/*              — 单取
 GET    /api/v1/links/*                 — 出链 + 反向引用（links 拆为独立顶层资源）
 PUT    /api/v1/links/*                 — 替换概念的出链
-GET    /api/v1/domains/{domain}/export — OKF bundle 导出
+GET    /api/v1/domains/{domain}/export — OKF bundle 导出（NDJSON 概念流，由客户端本地渲染文件树）
 GET    /api/v1/domains                 — 领域清单
 PUT    /api/v1/domains/{domain}        — 创建/更新 README、schema、visibility
 DELETE /api/v1/domains/{domain}        — 级联删除 domain 全部数据
@@ -68,7 +68,7 @@ okp get    <id>       — 单取
 okp search <query>    — 搜索
 okp batch  <file>     — 批量导入（NDJSON）
 okp links  <id>       — 查看关系
-okp export <domain>   — OKF 导出
+okp export <domain>   — 导出 OKF bundle 文件树到本地
 okp lint   <file>     — 本地校验
 okp domains           — 领域清单
 okp delete <id>       — 删除 concept

@@ -311,26 +311,56 @@ func cmdExport() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export <domain>",
 		Short: "导出为 OKF bundle 文件树",
-		Args:  cobra.ExactArgs(1),
+		Long: `从 API 拉取 domain 的全部 concept（NDJSON 流），
+在本地渲染 OKF bundle 文件树：{out}/{domain}/index.md + {type}/{slug}.md`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			domain := args[0]
 			if outDir == "" {
 				outDir = "./okp-export"
 			}
-			params := url.Values{"out": {outDir}}
-			path := "/api/v1/domains/" + url.PathEscape(args[0]) + "/export?" + params.Encode()
-			resp, err := doRequest("GET", path, nil)
+
+			resp, err := doRequest("GET", "/api/v1/domains/"+url.PathEscape(domain)+"/export", nil)
 			if err != nil {
 				return fmt.Errorf("请求失败: %w", err)
 			}
-			var result map[string]any
-			if err := readJSON(resp, &result); err != nil {
+			defer resp.Body.Close()
+			if resp.StatusCode >= 400 {
+				b, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
+			}
+
+			// 逐行解码 NDJSON 概念流（与 GET /api/v1/concepts/* 同一数据结构）。
+			var concepts []model.Concept
+			dec := json.NewDecoder(resp.Body)
+			for {
+				var c model.Concept
+				if err := dec.Decode(&c); err != nil {
+					if err == io.EOF {
+						break
+					}
+					return fmt.Errorf("导出流解析失败: %w", err)
+				}
+				concepts = append(concepts, c)
+			}
+			if len(concepts) == 0 {
+				return fmt.Errorf("导出内容为空")
+			}
+
+			bundleDir, err := service.WriteDomainBundle(domain, concepts, outDir)
+			if err != nil {
 				return err
 			}
-			prettyPrint(result)
+			fmt.Fprintf(os.Stderr, "导出 %d 个 concept → %s\n", len(concepts), bundleDir)
+			prettyPrint(map[string]any{
+				"domain": domain,
+				"path":   bundleDir,
+				"files":  len(concepts),
+			})
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&outDir, "out", "o", "", "输出目录")
+	cmd.Flags().StringVarP(&outDir, "out", "o", "", "输出目录（bundle 写入 {out}/{domain}/）")
 	return cmd
 }
 
