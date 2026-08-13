@@ -144,23 +144,30 @@ func PutConcept(c *model.Concept) (*model.Concept, []ValidationError, error) {
 	var prev model.Concept
 	result := db.First(&prev, "id = ?", c.ID)
 	if result.Error == nil {
-		// 已存在 → 检查 content_hash
-		if prev.ContentHash == c.ComputeHash() {
-			// 内容未变 → skip；若尚无可用向量则补嵌
+		// 触发条件 = content_hash（幂等 re-import）且向量输入文本（type/tags 也进 embedding）。
+		// 两者都未变 → 完全跳过；仅补嵌未完成的向量。
+		if prev.ContentHash == c.ComputeHash() && conceptEmbedText(&prev) == conceptEmbedText(c) {
 			if prev.EmbedStatus != "done" {
 				AsyncEmbed(prev.ID)
 			}
 			return &prev, nil, nil
 		}
-		// 内容变化 → 更新后重新嵌入。
+		// 有变化 → 持久化更新。
 		// 必须显式写 EmbedStatus：请求体不含该字段时 zero value 会把 status 清空。
 		c.CreatedAt = prev.CreatedAt
-		c.EmbedStatus = "pending"
+		if conceptEmbedText(&prev) == conceptEmbedText(c) && prev.EmbedStatus == "done" {
+			// 向量输入未变（如仅 body/resource 变化）：保留旧向量，避免无意义重嵌
+			c.EmbedStatus = prev.EmbedStatus
+		} else {
+			c.EmbedStatus = "pending"
+		}
 		if err := db.Save(c).Error; err != nil {
 			return nil, nil, err
 		}
 		saveRevision(c, "update")
-		AsyncEmbed(c.ID)
+		if c.EmbedStatus == "pending" {
+			AsyncEmbed(c.ID)
+		}
 		return c, nil, nil
 	}
 
@@ -402,7 +409,9 @@ func BatchPutConcepts(concepts []model.Concept) []BatchResult {
 		}
 
 		if prev, ok := existingMap[c.ID]; ok {
-			if prev.ContentHash == c.ContentHash {
+			prevText := conceptEmbedText(prev)
+			newText := conceptEmbedText(c)
+			if prev.ContentHash == c.ContentHash && prevText == newText {
 				results[i] = BatchResult{ID: c.ID, Status: "skipped"}
 				if prev.EmbedStatus != "done" {
 					needEmbed = append(needEmbed, prev.ID)
@@ -410,7 +419,11 @@ func BatchPutConcepts(concepts []model.Concept) []BatchResult {
 				continue
 			}
 			c.CreatedAt = prev.CreatedAt
-			c.EmbedStatus = "pending"
+			if prevText == newText && prev.EmbedStatus == "done" {
+				c.EmbedStatus = prev.EmbedStatus
+			} else {
+				c.EmbedStatus = "pending"
+			}
 			if err := tx.Save(c).Error; err != nil {
 				tx.Rollback()
 				// 事务失败则逐条 fallback
@@ -424,7 +437,9 @@ func BatchPutConcepts(concepts []model.Concept) []BatchResult {
 				return results
 			}
 			results[i] = BatchResult{ID: c.ID, Status: "updated"}
-			needEmbed = append(needEmbed, c.ID)
+			if c.EmbedStatus == "pending" {
+				needEmbed = append(needEmbed, c.ID)
+			}
 		} else {
 			c.EmbedStatus = "pending"
 			if err := tx.Create(c).Error; err != nil {
@@ -460,18 +475,24 @@ func putOne(db *gorm.DB, c *model.Concept) BatchResult {
 	c.ContentHash = c.ComputeHash()
 	var prev model.Concept
 	if err := db.First(&prev, "id = ?", c.ID).Error; err == nil {
-		if prev.ContentHash == c.ContentHash {
+		if prev.ContentHash == c.ContentHash && conceptEmbedText(&prev) == conceptEmbedText(c) {
 			if prev.EmbedStatus != "done" {
 				AsyncEmbed(prev.ID)
 			}
 			return BatchResult{ID: c.ID, Status: "skipped"}
 		}
 		c.CreatedAt = prev.CreatedAt
-		c.EmbedStatus = "pending"
+		if conceptEmbedText(&prev) == conceptEmbedText(c) && prev.EmbedStatus == "done" {
+			c.EmbedStatus = prev.EmbedStatus
+		} else {
+			c.EmbedStatus = "pending"
+		}
 		if err := db.Save(c).Error; err != nil {
 			return BatchResult{ID: c.ID, Status: "error", Error: err.Error()}
 		}
-		AsyncEmbed(c.ID)
+		if c.EmbedStatus == "pending" {
+			AsyncEmbed(c.ID)
+		}
 		return BatchResult{ID: c.ID, Status: "updated"}
 	}
 	c.EmbedStatus = "pending"
