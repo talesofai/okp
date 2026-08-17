@@ -29,7 +29,7 @@ func recordDomainReadAt(domain string, at time.Time) error {
 	return store.DB.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "domain"}, {Name: "date"}},
 		DoUpdates: clause.Assignments(map[string]any{
-			"reads": gorm.Expr("reads + ?", 1),
+			"reads": gorm.Expr("domain_read_stats.reads + ?", 1),
 		}),
 	}).Create(&stat).Error
 }
