@@ -18,6 +18,18 @@ func GetDomainMeta(domain string) (*model.DomainMeta, error) {
 	if err := store.DB.Where("domain = ?", domain).First(&meta).Error; err != nil {
 		return nil, err
 	}
+	if meta.CreatedAt.IsZero() {
+		var first model.Concept
+		err := store.DB.Select("created_at").Where("domain = ?", domain).Order("created_at ASC").First(&first).Error
+		switch {
+		case err == nil && !first.CreatedAt.IsZero():
+			meta.CreatedAt = first.CreatedAt
+		case err == gorm.ErrRecordNotFound:
+			meta.CreatedAt = meta.UpdatedAt
+		case err != nil:
+			return nil, err
+		}
+	}
 	return &meta, nil
 }
 

@@ -9,6 +9,8 @@ export interface Domain {
   concept_count: number;
   has_readme?: boolean;
   visibility: "public" | "private";
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface DomainMeta {
@@ -16,7 +18,23 @@ export interface DomainMeta {
   readme: string;
   schema: Record<string, unknown>;
   visibility: "public" | "private";
+  created_at?: string;
   updated_at?: string;
+}
+
+export interface DomainActivityPoint {
+  date: string;
+  created: number;
+  updated: number;
+  activity: number;
+}
+
+export interface DomainActivity {
+  domain: string;
+  days: number;
+  from: string;
+  to: string;
+  points: DomainActivityPoint[];
 }
 
 export interface Concept {
@@ -197,6 +215,12 @@ export function useApi() {
       getDomainReadme: (domain: string) =>
         fetchOkp<DomainMeta>(
           `/api/v1/domains/${encodeURIComponent(domain)}`,
+          getToken,
+        ),
+
+      getDomainActivity: (domain: string, days = 30) =>
+        fetchOkp<DomainActivity>(
+          `/api/v1/domains/${encodeURIComponent(domain)}/activity?days=${days}`,
           getToken,
         ),
 

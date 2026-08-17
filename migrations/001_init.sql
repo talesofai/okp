@@ -28,6 +28,10 @@ CREATE INDEX IF NOT EXISTS idx_concepts_frontmatter
 CREATE INDEX IF NOT EXISTS idx_concepts_domain_type_status
     ON concepts (domain, type, status);
 
+-- 活跃度时间窗口查询
+CREATE INDEX IF NOT EXISTS idx_concepts_domain_created_at ON concepts (domain, created_at);
+CREATE INDEX IF NOT EXISTS idx_concepts_domain_updated_at ON concepts (domain, updated_at);
+
 -- ============================================================
 -- links 关系表
 -- ============================================================

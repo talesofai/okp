@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApi, type Domain } from "../api/client";
 import { useState } from "react";
 import { Input, Text, Surface, Button, Badge } from "@cloudflare/kumo";
+import { formatDateTime } from "../lib/time";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -147,6 +148,10 @@ function Home() {
                 <Text size="sm" color="secondary" style={{ marginTop: 4 }}>
                   {d.concept_count} concepts
                 </Text>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 10 }}>
+                  <Text size="xs" color="secondary">创建 {formatDateTime(d.created_at)}</Text>
+                  <Text size="xs" color="secondary">更新 {formatDateTime(d.updated_at)}</Text>
+                </div>
               </Surface>
             </Link>
           ))}

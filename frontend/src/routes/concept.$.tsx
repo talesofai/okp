@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useApi } from "../api/client";
 import { Text, Badge, Surface, Empty, Loader, Button } from "@cloudflare/kumo";
+import { formatDateTime } from "../lib/time";
 
 declare const marked: { parse: (md: string) => string };
 
@@ -112,6 +113,10 @@ function ConceptDetail() {
           <Badge variant={concept.status === "accepted" ? "success" : "warning"}>
             {concept.status}
           </Badge>
+        </div>
+        <div style={{ display: "flex", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
+          <Text size="xs" color="secondary">创建 {formatDateTime(concept.created_at)}</Text>
+          <Text size="xs" color="secondary">更新 {formatDateTime(concept.updated_at)}</Text>
         </div>
       </div>
 

@@ -1,9 +1,11 @@
 package service
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"math/rand"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -22,6 +24,8 @@ type SearchResult struct {
 	Description string        `json:"description,omitempty"`
 	Tags        []string      `json:"tags,omitempty"`
 	Frontmatter model.JSONMap `json:"frontmatter,omitempty"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
 	MatchReason string        `json:"-"` // 内部使用，不暴露给用户
 }
 
@@ -143,6 +147,8 @@ func Search(params SearchParams) ([]SearchResult, int64, error) {
 			Description: c.Description,
 			Tags:        []string(c.Tags),
 			Frontmatter: c.Frontmatter,
+			CreatedAt:   c.CreatedAt,
+			UpdatedAt:   c.UpdatedAt,
 			MatchReason: matchReason(c, params.Query, params.Tags),
 		}
 	}
@@ -242,6 +248,8 @@ func Sample(userID, domain, typ string, limit int) ([]SearchResult, error) {
 			Description: c.Description,
 			Tags:        []string(c.Tags),
 			Frontmatter: c.Frontmatter,
+			CreatedAt:   c.CreatedAt,
+			UpdatedAt:   c.UpdatedAt,
 			MatchReason: "sample",
 		}
 	}
@@ -357,6 +365,7 @@ func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags 
 			ID: c.ID, Domain: c.Domain, Type: c.Type,
 			Title: c.Title, Description: c.Description,
 			Tags: []string(c.Tags), Frontmatter: c.Frontmatter,
+			CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		})
 	}
 
@@ -385,25 +394,129 @@ func mergeResults(trgm []model.Concept, vec []model.Concept, query string, tags 
 // ── 领域清单 ─────────────────────────────────────────────────
 
 type DomainInfo struct {
-	Domain       string `json:"domain"`
-	ConceptCount int64  `json:"concept_count"`
-	HasReadme    bool   `json:"has_readme"`
-	Visibility   string `json:"visibility"`
+	Domain       string    `json:"domain"`
+	ConceptCount int64     `json:"concept_count"`
+	HasReadme    bool      `json:"has_readme"`
+	Visibility   string    `json:"visibility"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type nullableTime struct {
+	time.Time
+	Valid bool
+}
+
+func (t nullableTime) Value() (driver.Value, error) {
+	if !t.Valid {
+		return nil, nil
+	}
+	return t.Time, nil
+}
+
+func (t *nullableTime) Scan(value any) error {
+	t.Valid = false
+	t.Time = time.Time{}
+	if value == nil {
+		return nil
+	}
+	if parsed, ok := value.(time.Time); ok {
+		t.Time = parsed
+		t.Valid = true
+		return nil
+	}
+
+	var raw string
+	switch v := value.(type) {
+	case string:
+		raw = v
+	case []byte:
+		raw = string(v)
+	default:
+		return fmt.Errorf("cannot scan %T as timestamp", value)
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+	} {
+		parsed, err := time.Parse(layout, raw)
+		if err == nil {
+			t.Time = parsed
+			t.Valid = true
+			return nil
+		}
+	}
+	return fmt.Errorf("cannot parse timestamp %q", raw)
+}
+
+type domainInfoRow struct {
+	Domain           string       `gorm:"column:domain"`
+	ConceptCount     int64        `gorm:"column:concept_count"`
+	HasReadme        bool         `gorm:"column:has_readme"`
+	Visibility       string       `gorm:"column:visibility"`
+	MetaCreatedAt    nullableTime `gorm:"column:meta_created_at"`
+	MetaUpdatedAt    nullableTime `gorm:"column:meta_updated_at"`
+	ConceptCreatedAt nullableTime `gorm:"column:concept_created_at"`
+	ConceptUpdatedAt nullableTime `gorm:"column:concept_updated_at"`
+}
+
+func domainInfoTimes(row domainInfoRow) (time.Time, time.Time) {
+	var created, updated time.Time
+	addEarliest := func(value nullableTime) {
+		if !value.Valid || value.Time.IsZero() {
+			return
+		}
+		if created.IsZero() || value.Time.Before(created) {
+			created = value.Time
+		}
+	}
+	addLatest := func(value nullableTime) {
+		if !value.Valid || value.Time.IsZero() {
+			return
+		}
+		if updated.IsZero() || value.Time.After(updated) {
+			updated = value.Time
+		}
+	}
+
+	addEarliest(row.MetaCreatedAt)
+	addEarliest(row.ConceptCreatedAt)
+	addLatest(row.MetaUpdatedAt)
+	addLatest(row.ConceptUpdatedAt)
+
+	// Older domain_meta rows may not have a meaningful created_at after the
+	// column is added. The first known update is the best available fallback.
+	if created.IsZero() {
+		created = updated
+	}
+	if updated.IsZero() {
+		updated = created
+	}
+	return created, updated
 }
 
 // ListDomains 列出所有领域。
 // 包含：有 concept 的 domain + 只有 README 的 domain（concept_count=0）。
 // q 为空时返回全部；不为空时用 trgm 模糊匹配领域名。
 func ListDomains(userID, q string) ([]DomainInfo, error) {
-	// FULL JOIN：concept 聚合 + domain_meta，两边都覆盖
-	sql := `
+	// FULL JOIN：concept 聚合 + domain_meta，两边都覆盖，同时聚合领域时间。
+	query := `
 		SELECT
 			COALESCE(c.domain, m.domain) AS domain,
 			COALESCE(c.concept_count, 0) AS concept_count,
 			(m.domain IS NOT NULL) AS has_readme,
-			COALESCE(m.visibility, 'public') AS visibility
+			COALESCE(m.visibility, 'public') AS visibility,
+			m.created_at AS meta_created_at,
+			m.updated_at AS meta_updated_at,
+			c.concept_created_at,
+			c.concept_updated_at
 		FROM (
-			SELECT domain, COUNT(*) AS concept_count
+			SELECT domain,
+				COUNT(*) AS concept_count,
+				MIN(created_at) AS concept_created_at,
+				MAX(updated_at) AS concept_updated_at
 			FROM concepts GROUP BY domain
 		) c
 		FULL JOIN domain_meta m ON c.domain = m.domain
@@ -419,16 +532,30 @@ func ListDomains(userID, q string) ([]DomainInfo, error) {
 
 	args := []interface{}{userID}
 	if q != "" && !store.IsSQLite {
-		sql += ` AND (similarity(COALESCE(c.domain, m.domain), ?) > 0.1
+		query += ` AND (similarity(COALESCE(c.domain, m.domain), ?) > 0.1
 				OR COALESCE(c.domain, m.domain) ILIKE ?)`
 		args = append(args, q, "%"+q+"%")
 	} else if q != "" {
-		sql += ` AND COALESCE(c.domain, m.domain) LIKE ?`
+		query += ` AND COALESCE(c.domain, m.domain) LIKE ?`
 		args = append(args, "%"+q+"%")
 	}
-	sql += ` ORDER BY concept_count DESC`
+	query += ` ORDER BY concept_count DESC`
 
-	var domains []DomainInfo
-	err := store.DB.Raw(sql, args...).Scan(&domains).Error
-	return domains, err
+	var rows []domainInfoRow
+	if err := store.DB.Raw(query, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	domains := make([]DomainInfo, len(rows))
+	for i, row := range rows {
+		createdAt, updatedAt := domainInfoTimes(row)
+		domains[i] = DomainInfo{
+			Domain:       row.Domain,
+			ConceptCount: row.ConceptCount,
+			HasReadme:    row.HasReadme,
+			Visibility:   row.Visibility,
+			CreatedAt:    createdAt,
+			UpdatedAt:    updatedAt,
+		}
+	}
+	return domains, nil
 }

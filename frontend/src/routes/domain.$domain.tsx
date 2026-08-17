@@ -5,9 +5,12 @@ import {
   useApi,
   type Concept,
   type CreateInviteResponse,
+  type Domain,
   type DomainInviteRow,
 } from "../api/client";
 import { Text, Badge, Surface, Empty, Button } from "@cloudflare/kumo";
+import { ActivityChart } from "../components/ActivityChart";
+import { formatDateTime } from "../lib/time";
 
 declare const marked: { parse: (md: string) => string };
 
@@ -65,6 +68,21 @@ function DomainPage() {
     queryKey: ['domain-meta', domain],
     queryFn: () => api.getDomainReadme(domain),
     retry: false,
+  })
+
+  const { data: domains } = useQuery({
+    queryKey: ['domains'],
+    queryFn: api.domains,
+  })
+
+  const domainInfo = useMemo(
+    () => domains?.find((item: Domain) => item.domain === domain),
+    [domains, domain],
+  )
+
+  const { data: activity, isLoading: activityLoading } = useQuery({
+    queryKey: ['domain-activity', domain],
+    queryFn: () => api.getDomainActivity(domain, 30),
   })
 
   const { data: me } = useQuery({
@@ -144,7 +162,9 @@ function DomainPage() {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <Text size="xl" weight="bold" as="h1">{domain}</Text>
-        {concepts && (
+        {domainInfo ? (
+          <Badge variant="info">{domainInfo.concept_count} concepts</Badge>
+        ) : concepts && (
           <Badge variant="info">{concepts.length} on this page</Badge>
         )}
         <Badge variant="default">{myDomainRole}</Badge>
@@ -160,6 +180,20 @@ function DomainPage() {
           </Button>
         )}
       </div>
+
+      {domainInfo && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+          <Text size="xs" color="secondary">创建 {formatDateTime(domainInfo.created_at)}</Text>
+          <Text size="xs" color="secondary">更新 {formatDateTime(domainInfo.updated_at)}</Text>
+        </div>
+      )}
+
+      {activityLoading && (
+        <Surface style={{ padding: '18px 20px', marginBottom: 24 }}>
+          <Text size="sm" color="secondary">活跃度加载中…</Text>
+        </Surface>
+      )}
+      {activity && <ActivityChart points={activity.points} />}
 
       {hasReadme && !readmeCollapsed && (
         <Surface style={{
@@ -364,6 +398,10 @@ function DomainPage() {
                       ))}
                     </div>
                   )}
+                  <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
+                    <Text size="xs" color="secondary">创建 {formatDateTime(c.created_at)}</Text>
+                    <Text size="xs" color="secondary">更新 {formatDateTime(c.updated_at)}</Text>
+                  </div>
                 </Surface>
               </Link>
             ))}

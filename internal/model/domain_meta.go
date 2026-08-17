@@ -10,6 +10,7 @@ type DomainMeta struct {
 	Readme     string    `gorm:"type:text;not null;default:''" json:"readme"`
 	Schema     JSONMap   `gorm:"type:jsonb;default:'{}'" json:"schema"`
 	Visibility string    `gorm:"type:text;not null;default:'public';index" json:"visibility"`
+	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 

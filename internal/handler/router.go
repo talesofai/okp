@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +59,7 @@ func NewRouter() http.Handler {
 
 	r.Get("/api/v1/domains", listDomains)
 	r.Get("/api/v1/domains/{domain}/export", exportDomain)
+	r.Get("/api/v1/domains/{domain}/activity", domainActivity)
 	r.Get("/api/v1/domains/{domain}", getDomainMeta)
 	r.Put("/api/v1/domains/{domain}", putDomainMeta)
 	r.Delete("/api/v1/domains/{domain}", deleteDomain)
@@ -488,6 +490,34 @@ func listDomains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, domains)
+}
+
+// GET /api/v1/domains/{domain}/activity?days=30
+func domainActivity(w http.ResponseWriter, r *http.Request) {
+	domain := chi.URLParam(r, "domain")
+	// Check access before parsing user-controlled options so private domains do
+	// not reveal their existence through validation responses.
+	if !requireReadableDomain(w, r, domain) {
+		return
+	}
+
+	days := 30
+	if raw := r.URL.Query().Get("days"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 365 {
+			writeError(w, http.StatusBadRequest, "days must be an integer between 1 and 365")
+			return
+		}
+		days = parsed
+	}
+
+	activity, err := service.GetDomainActivity(domain, days)
+	if err != nil {
+		slog.Error("获取领域活跃度失败", "domain", domain, "error", err)
+		writeError(w, http.StatusInternalServerError, "获取领域活跃度失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, activity)
 }
 
 // GET /api/v1/domains/{domain}/export

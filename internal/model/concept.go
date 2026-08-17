@@ -159,7 +159,7 @@ func parsePGArray(raw string) []string {
 // ID 路径式：'fandom/genshin-impact/characters/klee'
 type Concept struct {
 	ID          string      `gorm:"primaryKey;type:text" json:"id"`
-	Domain      string      `gorm:"type:text;not null;index:idx_domain_type,priority:1" json:"domain"`
+	Domain      string      `gorm:"type:text;not null;index:idx_domain_type,priority:1;index:idx_concepts_domain_created_at,priority:1;index:idx_concepts_domain_updated_at,priority:1" json:"domain"`
 	Type        string      `gorm:"type:text;not null;index:idx_domain_type,priority:2" json:"type"`
 	Title       string      `gorm:"type:text" json:"title,omitempty"`
 	Description string      `gorm:"type:text" json:"description,omitempty"`
@@ -170,8 +170,8 @@ type Concept struct {
 	Provenance  JSONMap     `gorm:"type:jsonb;not null" json:"provenance"`
 	ContentHash string      `gorm:"type:text" json:"content_hash,omitempty"`
 	EmbedStatus string      `gorm:"type:text;default:'pending'" json:"-"` // pending | done | failed
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at"`
+	CreatedAt   time.Time   `gorm:"index:idx_concepts_domain_created_at,priority:2" json:"created_at"`
+	UpdatedAt   time.Time   `gorm:"index:idx_concepts_domain_updated_at,priority:2" json:"updated_at"`
 }
 
 // ComputeHash 计算 concept 内容指纹（幂等重导入用）。

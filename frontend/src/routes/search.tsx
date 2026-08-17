@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useApi, type Concept } from "../api/client";
 import { Input, Text, Badge, Surface, Empty, Button } from "@cloudflare/kumo";
+import { formatDateTime } from "../lib/time";
 
 export const Route = createFileRoute("/search")({
   component: Search,
@@ -91,6 +92,10 @@ function ConceptCard({ concept: c }: { concept: Concept }) {
           {c.tags?.slice(0, 5).map((t) => (
             <Badge key={t} variant="default">{t}</Badge>
           ))}
+        </div>
+        <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
+          <Text size="xs" color="secondary">创建 {formatDateTime(c.created_at)}</Text>
+          <Text size="xs" color="secondary">更新 {formatDateTime(c.updated_at)}</Text>
         </div>
       </Surface>
     </a>
