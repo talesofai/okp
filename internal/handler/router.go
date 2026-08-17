@@ -96,6 +96,31 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// recordDomainRead is intentionally best-effort: analytics must never turn a
+// successful knowledge read into an API failure.
+func recordDomainRead(domain string) {
+	if err := service.RecordDomainRead(domain); err != nil {
+		slog.Warn("record domain read failed", "domain", domain, "error", err)
+	}
+}
+
+// recordReadableDomainRead attributes a filtered GET only after confirming
+// that its domain both exists and is readable. It must not affect the caller's
+// response, including the existing empty-result behavior for hidden domains.
+func recordReadableDomainRead(r *http.Request, domain string) {
+	if domain == "" || !auth.CanReadDomain(auth.UserIDFromContext(r), domain) {
+		return
+	}
+	exists, err := service.DomainExists(domain)
+	if err != nil {
+		slog.Warn("domain read existence lookup failed", "domain", domain, "error", err)
+		return
+	}
+	if exists {
+		recordDomainRead(domain)
+	}
+}
+
 func requireReadableDomain(w http.ResponseWriter, r *http.Request, domain string) bool {
 	exists, err := service.DomainExists(domain)
 	if err != nil {
@@ -375,6 +400,8 @@ func listConcepts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("X-Total-Count", itoa(total))
+	// A cross-domain search has no unambiguous domain to attribute, so skip it.
+	recordReadableDomainRead(r, params.Domain)
 	writeJSON(w, http.StatusOK, results)
 }
 
@@ -390,6 +417,7 @@ func getConcept(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "concept 不存在: "+id)
 		return
 	}
+	recordDomainRead(c.Domain)
 	writeJSON(w, http.StatusOK, c)
 }
 
@@ -437,6 +465,7 @@ func getConceptLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Total-Outgoing", itoa(totalOut))
 	w.Header().Set("X-Total-Backlinks", itoa(totalBack))
+	recordDomainRead(c.Domain)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"concept_id": id,
 		"outgoing":   outgoing,
@@ -539,6 +568,7 @@ func exportDomain(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("domain '%s' 下无 concept", domain))
 		return
 	}
+	recordDomainRead(domain)
 
 	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
 	w.Header().Set("X-Total-Count", itoa(count))
@@ -647,6 +677,7 @@ func getDomainMeta(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "domain 没有 README: "+domain)
 		return
 	}
+	recordDomainRead(domain)
 	writeJSON(w, http.StatusOK, meta)
 }
 
@@ -751,6 +782,7 @@ func sampleConcepts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "采样失败")
 		return
 	}
+	recordReadableDomainRead(r, q.Get("domain"))
 	writeJSON(w, http.StatusOK, results)
 }
 

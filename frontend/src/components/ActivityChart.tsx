@@ -8,7 +8,6 @@ const PANEL_GAP = 10;
 const PANEL_PADDING_X = 14;
 const PANEL_PADDING_TOP = 32;
 const PANEL_PADDING_BOTTOM = 12;
-const CHART_HEIGHT = PANEL_HEIGHT * 3 + PANEL_GAP * 2;
 
 type PlotPoint = { x: number; y: number };
 
@@ -20,10 +19,13 @@ type ActivitySeries = {
 };
 
 const series: ActivitySeries[] = [
-  { id: "activity", label: "活跃", color: "#b9c9c7", value: (point) => point.activity },
-  { id: "created", label: "创建", color: "#9fb5b3", value: (point) => point.created },
-  { id: "updated", label: "更新", color: "#c8c0ad", value: (point) => point.updated },
+  { id: "activity", label: "变更", color: "#b9c9c7", value: (point) => point.activity },
+  { id: "created", label: "创建", color: "#aabdbc", value: (point) => point.created },
+  { id: "updated", label: "更新", color: "#91aaa7", value: (point) => point.updated },
+  { id: "reads", label: "读取", color: "#c8c0ad", value: (point) => point.reads },
 ];
+
+const CHART_HEIGHT = PANEL_HEIGHT * series.length + PANEL_GAP * (series.length - 1);
 
 function smoothPath(points: PlotPoint[]): string {
   if (points.length === 0) return "";
@@ -92,7 +94,7 @@ export function ActivityChart({ points }: { points: DomainActivityPoint[] }) {
       }}
     >
       <div style={{ padding: "18px 20px 14px", display: "flex", justifyContent: "space-between", gap: 16, alignItems: "baseline", flexWrap: "wrap" }}>
-        <Text weight="medium" style={{ color: "#e2e9e7" }}>近 30 天活跃度</Text>
+        <Text weight="medium" style={{ color: "#e2e9e7" }}>近 30 天活动</Text>
         <Text size="xs" style={{ color: "rgba(216, 225, 223, 0.6)", fontVariantNumeric: "tabular-nums" }}>
           {formatShortDate(points[0]?.date)} — {formatShortDate(points[points.length - 1]?.date)}
         </Text>
@@ -102,7 +104,7 @@ export function ActivityChart({ points }: { points: DomainActivityPoint[] }) {
         viewBox={`0 0 ${WIDTH} ${CHART_HEIGHT}`}
         preserveAspectRatio="none"
         role="img"
-        aria-label="Domain 近 30 天活跃度，包含活跃、创建、更新三组面积图"
+        aria-label="Domain 近 30 天活动，包含变更、创建、更新、读取四组面积图"
         style={{ display: "block", width: "100%", height: `${CHART_HEIGHT}px`, padding: "0 12px", boxSizing: "border-box" }}
       >
         <defs>

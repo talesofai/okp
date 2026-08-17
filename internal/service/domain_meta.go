@@ -150,6 +150,9 @@ func DeleteDomain(domain string) error {
 		if err := tx.Where("domain = ?", domain).Delete(&model.DomainMember{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("domain = ?", domain).Delete(&model.DomainReadStat{}).Error; err != nil {
+			return err
+		}
 		if metaErr == nil {
 			return tx.Delete(&meta).Error
 		}

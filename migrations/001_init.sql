@@ -51,6 +51,19 @@ CREATE INDEX IF NOT EXISTS idx_domain_meta_visibility
     ON domain_meta (visibility);
 
 -- ============================================================
+-- domain read statistics
+-- ============================================================
+
+-- Daily aggregate of successful domain-scoped knowledge GET requests.
+-- No visitor, IP, or request identifiers are stored.
+CREATE TABLE IF NOT EXISTS domain_read_stats (
+    domain TEXT NOT NULL,
+    date DATE NOT NULL,
+    reads BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (domain, date)
+);
+
+-- ============================================================
 -- 全文检索升级（可选，后续按需执行）
 -- ============================================================
 

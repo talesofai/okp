@@ -148,6 +148,9 @@ func TestDeleteDomainCleansOwnedData(t *testing.T) {
 	if err := db.Create(&model.DomainInvite{ID: "invite", CodeHash: "hash", Domain: "secret", Role: "reader", CreatedBy: "host", MaxUses: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&model.DomainReadStat{Domain: "secret", Date: "2026-08-17", Reads: 3}).Error; err != nil {
+		t.Fatal(err)
+	}
 	secret := testConcept("secret/Note/delete-me", "secret", "Delete me")
 	public := testConcept("public/Note/keep-me", "public", "Keep me")
 	if err := db.Create(&[]model.Concept{secret, public}).Error; err != nil {
@@ -170,6 +173,7 @@ func TestDeleteDomainCleansOwnedData(t *testing.T) {
 	assertCount(t, db, &model.DomainMeta{}, 0, "domain = ?", "secret")
 	assertCount(t, db, &model.DomainMember{}, 0, "domain = ?", "secret")
 	assertCount(t, db, &model.DomainInvite{}, 0, "domain = ?", "secret")
+	assertCount(t, db, &model.DomainReadStat{}, 0, "domain = ?", "secret")
 	assertCount(t, db, &model.Concept{}, 0, "domain = ?", "secret")
 	assertCount(t, db, &model.Link{}, 0, "from_id = ? OR to_id = ?", secret.ID, secret.ID)
 	assertCount(t, db, &model.Revision{}, 0, "concept_id = ?", secret.ID)

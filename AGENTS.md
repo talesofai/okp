@@ -43,7 +43,7 @@ GET    /api/v1/concepts/*              — 单取
 GET    /api/v1/links/*                 — 出链 + 反向引用（links 拆为独立顶层资源）
 PUT    /api/v1/links/*                 — 替换概念的出链
 GET    /api/v1/domains/{domain}/export — OKF bundle 导出（NDJSON 概念流，由客户端本地渲染文件树）
-GET    /api/v1/domains/{domain}/activity — 日粒度 concept 创建/更新活跃度（默认 30 天，最多 365 天）
+GET    /api/v1/domains/{domain}/activity — 日粒度创建、更新和成功知识读取请求（默认 30 天，最多 365 天）
 GET    /api/v1/domains                 — 领域清单（concept 数及聚合 created_at/updated_at）
 PUT    /api/v1/domains/{domain}        — 创建/更新 README、schema、visibility
 DELETE /api/v1/domains/{domain}        — 级联删除 domain 全部数据
@@ -58,6 +58,7 @@ GET    /api/v1/health                  — 健康检查
 concepts  — 主干表，每个 concept 一行（= OKF concept）
 links     — 有向关系（from_id → to_id，容忍断链）
 revisions — 变更历史（替代 git）
+domain_read_stats — domain 每日成功知识读取请求聚合（不保存访问者身份）
 ```
 
 详见 `internal/model/` 和 `migrations/001_init.sql`。

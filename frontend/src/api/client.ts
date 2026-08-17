@@ -26,6 +26,7 @@ export interface DomainActivityPoint {
   date: string;
   created: number;
   updated: number;
+  reads: number;
   activity: number;
 }
 

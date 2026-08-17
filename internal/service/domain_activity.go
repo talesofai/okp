@@ -15,6 +15,7 @@ type DomainActivityPoint struct {
 	Date     string `json:"date"`
 	Created  int64  `json:"created"`
 	Updated  int64  `json:"updated"`
+	Reads    int64  `json:"reads"`
 	Activity int64  `json:"activity"`
 }
 
@@ -32,8 +33,14 @@ type conceptActivityDates struct {
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
+type domainReadBucket struct {
+	Date  string `gorm:"column:date"`
+	Reads int64  `gorm:"column:reads"`
+}
+
 // GetDomainActivity groups current concepts by created_at and their latest
-// updated_at. The range includes today and is bounded for predictable queries.
+// updated_at, then joins daily successful knowledge reads. The range includes
+// today and is bounded for predictable queries.
 func GetDomainActivity(domain string, days int) (DomainActivity, error) {
 	if domain == "" {
 		return DomainActivity{}, fmt.Errorf("domain is required")
@@ -80,6 +87,23 @@ func getDomainActivityAt(domain string, days int, now time.Time) (DomainActivity
 			if i := bucket(row.UpdatedAt); i >= 0 {
 				points[i].Updated++
 			}
+		}
+	}
+
+	var readRows []domainReadBucket
+	if err := store.DB.Model(&model.DomainReadStat{}).
+		Select("CAST(date AS TEXT) AS date, reads").
+		Where("domain = ? AND date >= ? AND date < ?", domain, start.Format("2006-01-02"), end.Format("2006-01-02")).
+		Find(&readRows).Error; err != nil {
+		return DomainActivity{}, err
+	}
+	pointIndex := make(map[string]int, len(points))
+	for i := range points {
+		pointIndex[points[i].Date] = i
+	}
+	for _, row := range readRows {
+		if i, ok := pointIndex[row.Date]; ok {
+			points[i].Reads += row.Reads
 		}
 	}
 	for i := range points {

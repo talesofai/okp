@@ -30,6 +30,7 @@ func OpenDatabase(t *testing.T) *gorm.DB {
 		&model.Revision{},
 		&model.User{},
 		&model.DomainMeta{},
+		&model.DomainReadStat{},
 		&model.DomainMember{},
 		&model.DomainInvite{},
 	); err != nil {

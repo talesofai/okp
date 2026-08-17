@@ -66,6 +66,7 @@ func Init() {
 		&model.Revision{},
 		&model.User{},
 		&model.DomainMeta{},
+		&model.DomainReadStat{},
 		&model.DomainMember{},
 		&model.DomainInvite{},
 	); err != nil {
