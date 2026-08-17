@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApi, type Domain } from "../api/client";
 import { useState } from "react";
 import { Input, Text, Surface, Button, Badge } from "@cloudflare/kumo";
-import { formatDateTime } from "../lib/time";
+import { formatCompactDate, formatDateTime, formatRelativeTime } from "../lib/time";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -137,20 +137,60 @@ function Home() {
           gap: 12,
         }}>
           {(domains ?? []).map((d: Domain) => (
-            <Link key={d.domain} to="/domain/$domain" params={{ domain: d.domain }} style={{ textDecoration: "none" }}>
+            <Link
+              key={d.domain}
+              to="/domain/$domain"
+              params={{ domain: d.domain }}
+              style={{ display: "block", height: "100%", textDecoration: "none" }}
+            >
               <Surface style={{
                 padding: "20px 24px",
+                minHeight: 154,
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
                 cursor: "pointer",
                 transition: "border-color 0.15s",
               }}>
-                <Text weight="medium">{d.domain}</Text>
-                {d.visibility === "private" && <Badge variant="warning">private</Badge>}
-                <Text size="sm" color="secondary" style={{ marginTop: 4 }}>
-                  {d.concept_count} concepts
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <Text weight="medium" style={{ overflowWrap: "anywhere" }}>{d.domain}</Text>
+                  {d.visibility === "private" && <Badge variant="warning">private</Badge>}
+                </div>
+                <Text
+                  size="sm"
+                  color="secondary"
+                  style={{ marginTop: 4, fontVariantNumeric: "tabular-nums" }}
+                >
+                  {d.concept_count.toLocaleString("zh-CN")} concepts
                 </Text>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 10 }}>
-                  <Text size="xs" color="secondary">创建 {formatDateTime(d.created_at)}</Text>
-                  <Text size="xs" color="secondary">更新 {formatDateTime(d.updated_at)}</Text>
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "8px 16px",
+                  marginTop: "auto",
+                  paddingTop: 14,
+                  borderTop: "1px solid rgba(128, 128, 128, 0.18)",
+                  flexWrap: "wrap",
+                  fontVariantNumeric: "tabular-nums",
+                }}>
+                  <time
+                    dateTime={d.updated_at}
+                    title={`最后更新：${formatDateTime(d.updated_at)}`}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 7 }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{ width: 6, height: 6, borderRadius: "50%", background: "#2f8f6b", flex: "0 0 auto" }}
+                    />
+                    <Text size="xs" weight="medium">{formatRelativeTime(d.updated_at)}更新</Text>
+                  </time>
+                  <time
+                    dateTime={d.created_at}
+                    title={`创建时间：${formatDateTime(d.created_at)}`}
+                  >
+                    <Text size="xs" color="secondary">创建于 {formatCompactDate(d.created_at)}</Text>
+                  </time>
                 </div>
               </Surface>
             </Link>
