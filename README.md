@@ -7,8 +7,9 @@
 <h1 align="center">OKP — Open Knowledge Protocol</h1>
 
 <p align="center">
-  An open knowledge protocol for people and AI agents.<br/>
-  Built for the <a href="https://cohub.run">Cohub</a> ecosystem. Runs on your own host too.
+  The <strong>context layer</strong> for AI agents — an open, structured knowledge protocol<br/>
+  for people and agents. Built for the <a href="https://cohub.run">Cohub</a> ecosystem.<br/>
+  Runs on your own host too.
 </p>
 
 <p align="center">
@@ -21,9 +22,11 @@
 
 ## Why OKP
 
-Most knowledge lives in chat logs, wikis, and docs that agents struggle to use well.
+Agents don't need more memory — they need better **context**. Most knowledge
+lives in chat logs, wikis, and docs that agents struggle to use well.
 
-OKP turns that into an **open, structured, searchable knowledge protocol**:
+OKP turns that into an **open, structured, searchable knowledge protocol** that
+gives agents real context:
 
 - **Public by default** — domains are open unless their creator chooses private visibility
 - **Domain-shaped knowledge** — each domain has its own README and schema
@@ -38,6 +41,9 @@ npm install -g @markbangwu/okp
 ```
 
 ## Agent skills
+
+Skills-first: OKP integrates through agent skills — search and import knowledge
+straight from your agent, no MCP server needed.
 
 ```bash
 npx skills add https://github.com/talesofai/okp \
