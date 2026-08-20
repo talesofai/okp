@@ -130,6 +130,11 @@ private: host > writer > reader
 
 Public domains are readable by every authenticated user. Private domains are only discoverable and readable by explicitly invited members, including global admins. Writers can contribute concepts. Each domain has one host, and only the host manages a private domain.
 
+## Read
+
+- [Why OKP is skills-first — and why we chose skills over MCP](https://github.com/talesofai/okp/discussions/1)
+- [OKP vs mem0 / claude-mem / basicmemory: knowledge, not memory](https://github.com/talesofai/okp/discussions/2)
+
 ## License
 
 MIT
