@@ -134,6 +134,7 @@ Public domains are readable by every authenticated user. Private domains are onl
 
 - [Why OKP is skills-first — and why we chose skills over MCP](https://github.com/talesofai/okp/discussions/1)
 - [OKP vs mem0 / claude-mem / basicmemory: knowledge, not memory](https://github.com/talesofai/okp/discussions/2)
+- [Giving your agent real domain knowledge — two live OKP domains to try](https://github.com/talesofai/okp/discussions/3)
 
 ## License
 
